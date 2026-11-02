@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Tu Tiên Bá Đạo</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #070a13; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        .custom-scroll::-webkit-scrollbar { width: 3px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    </style>
+</head>
+<body class="h-screen flex flex-col justify-between select-none">
+    <header class="p-3 bg-slate-950/80 backdrop-blur border-b border-slate-800 flex justify-between items-center sticky top-0 z-20">
+        <div>
+            <h1 class="text-amber-500 font-extrabold text-sm flex items-center gap-1.5">
+                <i class="fa-solid fa-dragon"></i> TU TIÊN BÁ ĐẠO
+            </h1>
+            <p id="user-display" class="text-[10px] text-slate-400">Đang đồng bộ...</p>
+        </div>
+        <button onclick="openDevModal()" class="px-2 py-1 bg-rose-950/60 text-rose-300 border border-rose-800/80 rounded text-[11px] font-semibold">
+            <i class="fa-solid fa-code"></i> Dev Mode
+        </button>
+    </header>
+
+    <main class="flex-1 overflow-y-auto p-4 custom-scroll" id="main-content">
+        <div id="view-slots" class="space-y-3">
+            <div class="flex justify-between items-center">
+                <h2 class="text-xs font-bold text-amber-400 uppercase tracking-wider">Hồn Kiếp Luân Hồi (5 Slot)</h2>
+            </div>
+            <div id="slots-container" class="space-y-2.5"></div>
+        </div>
+
+        <div id="view-pvp" class="hidden space-y-4">
+            <div class="flex justify-between items-center bg-slate-900/90 p-3 rounded-xl border border-slate-800">
+                <div>
+                    <span class="text-[10px] text-slate-400 uppercase">Xuất chiến</span>
+                    <p id="active-char-name" class="font-bold text-amber-400 text-sm"></p>
+                </div>
+                <button onclick="switchView('view-slots')" class="text-xs bg-slate-800 px-3 py-1.5 rounded-lg text-slate-300 border border-slate-700">Đổi Slot</button>
+            </div>
+            <div class="flex justify-between items-center">
+                <h3 class="font-bold text-slate-200 text-xs uppercase"><i class="fa-solid fa-swords text-amber-500"></i> Tu Sĩ Online</h3>
+                <button onclick="loadPvPLobby()" class="text-xs text-amber-500"><i class="fa-solid fa-rotate"></i> Làm mới</button>
+            </div>
+            <div id="pvp-list" class="space-y-2"></div>
+        </div>
+    </main>
+
+    <div id="battle-modal" class="hidden fixed inset-0 bg-black/95 flex flex-col p-4 z-50">
+        <div class="flex justify-between items-center pb-2 border-b border-slate-800">
+            <h3 class="font-bold text-amber-400 text-xs" id="battle-title">QUYẾT ĐẤU</h3>
+            <button onclick="closeBattleModal()" class="text-slate-400 px-2 py-1"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div id="battle-logs" class="flex-1 overflow-y-auto my-3 space-y-1.5 text-xs font-mono p-3 bg-slate-950 rounded-lg border border-slate-800 custom-scroll"></div>
+        <button onclick="closeBattleModal()" class="w-full py-2.5 bg-amber-600 text-slate-950 font-bold rounded-lg text-xs">Đóng</button>
+    </div>
+
+    <div id="dev-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
+        <div class="bg-slate-900 border border-amber-600 w-full max-w-xs rounded-xl p-4 space-y-3">
+            <h3 class="font-bold text-amber-400 text-xs uppercase">Khai Mở Dev Mode</h3>
+            <input type="password" id="dev-pass" placeholder="Nhập mật khẩu..." class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded text-xs text-white outline-none">
+            <div class="flex gap-2">
+                <button onclick="closeDevModal()" class="flex-1 py-1.5 bg-slate-800 text-xs rounded text-slate-300">Hủy</button>
+                <button onclick="submitDevPassword()" class="flex-1 py-1.5 bg-amber-600 text-slate-950 font-bold text-xs rounded">Xác Nhận</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const tg = window.Telegram?.WebApp;
+        if (tg) { tg.ready(); tg.expand(); }
+        const tgUser = tg?.initDataUnsafe?.user;
+        const telegramId = tgUser?.id ? String(tgUser.id) : "987654321";
+        const displayName = tgUser?.username ? `@${tgUser.username}` : (tgUser?.first_name || "Đạo Hữu Vô Danh");
+        document.getElementById('user-display').innerText = `${displayName} (${telegramId})`;
+
+        let currentActiveChar = null;
+        let isDevActivated = false;
+
+        async function loadSlots() {
+            const res = await fetch(`/api/slots/${telegramId}`);
+            const data = await res.json();
+            const container = document.getElementById('slots-container');
+            container.innerHTML = "";
+
+            for (let i = 1; i <= 5; i++) {
+                const char = data.slots[i];
+                const card = document.createElement('div');
+                card.className = "p-3 rounded-xl border bg-slate-900/90 flex justify-between items-center " + (char ? "border-amber-600/40" : "border-slate-800 border-dashed");
+                if (char) {
+                    card.innerHTML = `
+                        <div>
+                            <div class="flex items-center gap-1.5">
+                                <span class="font-bold text-slate-100 text-sm">${char.name}</span>
+                                ${char.is_dev ? '<span class="text-[9px] px-1 bg-rose-900 text-rose-300 font-bold rounded">DEV</span>' : ''}
+                            </div>
+                            <p class="text-[11px] text-amber-500">${char.realm} • HP: ${char.stats.hp} • Tốc: ${char.stats.toc_do}</p>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="selectSlot(${JSON.stringify(char).replace(/"/g, '&quot;')})" class="px-3 py-1 bg-amber-600 text-slate-950 text-xs font-bold rounded-lg">Vào</button>
+                            <button onclick="deleteChar(${i}, '${char.name}')" class="px-2 py-1 bg-rose-950 text-rose-300 text-xs rounded-lg border border-rose-800"><i class="fa-solid fa-trash"></i></button>
+                        </div>
+                    `;
+                } else {
+                    card.innerHTML = `
+                        <span class="text-xs text-slate-500">Slot ${i}: Trống</span>
+                        <button onclick="promptCreateChar(${i})" class="px-3 py-1 bg-slate-800 text-amber-400 text-xs rounded-lg border border-slate-700">Tạo mới</button>
+                    `;
+                }
+                container.appendChild(card);
+            }
+        }
+
+        async function promptCreateChar(slotIndex) {
+            const name = prompt(`Đạo hiệu nhân vật Slot ${slotIndex}:`, `Tu Sĩ ${Math.floor(Math.random()*1000)}`);
+            if (!name) return;
+            let payload = { telegram_id: telegramId, username: displayName, slot_index: slotIndex, name: name, stats: {}, roots: ["Hỏa Phổ Thông", "Lôi Linh Căn (Bậc C)"] };
+            if (isDevActivated) {
+                payload.admin_password = "DevGame";
+                payload.stats = { hp: 99999, mp: 99999, suc_manh: 5000, toc_do: 1200, thu: 1500, bao_kich: 40, choang: 40 };
+                payload.roots = ["Tam Muội Chân Hỏa (SSS)", "Canh Kim Bạch Hổ (SSS)"];
+            }
+            const res = await fetch('/api/characters/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            if (res.ok) { isDevActivated = false; loadSlots(); } else { alert((await res.json()).detail); }
+        }
+
+        async function deleteChar(slotIndex, expectedName) {
+            const confirmName = prompt(`Nhập chính xác tên [${expectedName}] để xóa:`);
+            if (confirmName !== expectedName) return alert("Sai tên!");
+            const res = await fetch('/api/characters/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ telegram_id: telegramId, slot_index: slotIndex, confirm_name: confirmName }) });
+            if (res.ok) loadSlots();
+        }
+
+        function selectSlot(char) {
+            currentActiveChar = char;
+            document.getElementById('active-char-name').innerText = `${char.name} (${char.realm})`;
+            switchView('view-pvp');
+            loadPvPLobby();
+        }
+
+        async function loadPvPLobby() {
+            if (!currentActiveChar) return;
+            const res = await fetch(`/api/pvp/lobby?exclude_id=${currentActiveChar.char_id}`);
+            const data = await res.json();
+            const list = document.getElementById('pvp-list');
+            list.innerHTML = "";
+            if (data.opponents.length === 0) { list.innerHTML = `<p class="text-xs text-slate-500 text-center py-6">Chưa có đối thủ online.</p>`; return; }
+            data.opponents.forEach(op => {
+                const item = document.createElement('div');
+                item.className = "p-3 bg-slate-900 border border-slate-800 rounded-xl flex justify-between items-center";
+                item.innerHTML = `
+                    <div>
+                        <span class="font-bold text-slate-200 text-xs">${op.name}</span>
+                        <p class="text-[10px] text-slate-400">${op.realm} • HP: ${op.hp}</p>
+                    </div>
+                    <button onclick="startPvP(${op.id}, '${op.name}')" class="px-3 py-1.5 bg-rose-600 text-white font-bold text-xs rounded-lg">Thách Đấu</button>
+                `;
+                list.appendChild(item);
+            });
+        }
+
+        async function startPvP(targetId, targetName) {
+            document.getElementById('battle-title').innerText = `${currentActiveChar.name} VS ${targetName}`;
+            const logBox = document.getElementById('battle-logs');
+            logBox.innerHTML = "<p class='text-amber-400'>Đang giao tranh...</p>";
+            document.getElementById('battle-modal').classList.remove('hidden');
+
+            const res = await fetch('/api/pvp/challenge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ challenger_char_id: currentActiveChar.char_id, target_char_id: targetId }) });
+            const result = await res.json();
+            logBox.innerHTML = "";
+            let i = 0;
+            function printLog() {
+                if (i < result.logs.length) {
+                    const p = document.createElement('p');
+                    p.innerText = result.logs[i];
+                    p.className = result.logs[i].includes("BẠO KÍCH") ? "text-amber-400 font-bold" : (result.logs[i].includes("KẾT THÚC") ? "text-emerald-400 font-bold" : "text-slate-300");
+                    logBox.appendChild(p);
+                    logBox.scrollTop = logBox.scrollHeight;
+                    i++;
+                    setTimeout(printLog, 80);
+                }
+            }
+            printLog();
+        }
+
+        function switchView(viewId) {
+            document.getElementById('view-slots').classList.add('hidden');
+            document.getElementById('view-pvp').classList.add('hidden');
+            document.getElementById(viewId).classList.remove('hidden');
+        }
+        function closeBattleModal() { document.getElementById('battle-modal').classList.add('hidden'); }
+        function openDevModal() { document.getElementById('dev-modal').classList.remove('hidden'); }
+        function closeDevModal() { document.getElementById('dev-modal').classList.add('hidden'); }
+        function submitDevPassword() {
+            if (document.getElementById('dev-pass').value === "DevGame") {
+                isDevActivated = true; alert("Đã mở Dev Mode!"); closeDevModal();
+            } else { alert("Sai mật mã!"); }
+        }
+
+        loadSlots();
+    </script>
+</body>
+</html>
