@@ -3,33 +3,39 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Tu Tiên Bá Đạo - Mini App</title>
+    <title>Phàm Nhân Tu Tiên - Mini App</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
-        body { background-color: #050811; color: #cbd5e1; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        .gold-glow { text-shadow: 0 0 10px rgba(245, 158, 11, 0.5); }
+        body { background-color: #060913; color: #cbd5e1; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
         .custom-scroll::-webkit-scrollbar { width: 3px; }
         .custom-scroll::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
+        .tier-D { color: #94a3b8; }
+        .tier-C { color: #22c55e; }
+        .tier-B { color: #38bdf8; }
+        .tier-A { color: #c084fc; }
+        .tier-S { color: #f97316; }
+        .tier-SS { color: #ef4444; }
+        .tier-SSS { color: #eab308; text-shadow: 0 0 8px rgba(234,179,8,0.6); }
     </style>
 </head>
 <body class="h-screen flex flex-col justify-between select-none">
 
     <!-- HEADER STATUS BAR -->
-    <header class="p-2.5 bg-slate-950/90 border-b border-slate-800 flex justify-between items-center sticky top-0 z-30">
+    <header class="p-2.5 bg-slate-950/95 border-b border-slate-800 flex justify-between items-center sticky top-0 z-30">
         <div>
-            <h1 class="text-amber-500 font-black text-xs flex items-center gap-1.5 tracking-wider">
-                <i class="fa-solid fa-dragon"></i> TU TIÊN BÁ ĐẠO
+            <h1 class="text-amber-500 font-black text-xs flex items-center gap-1 tracking-wider">
+                <i class="fa-solid fa-dragon"></i> PHÀM NHÂN TU TIÊN
             </h1>
-            <p id="header-char-info" class="text-[10px] text-slate-400">Chưa nhập thể</p>
+            <p id="header-char-info" class="text-[10px] text-slate-400">Luân Hồi Điện</p>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-1.5">
             <div class="flex items-center gap-1 text-[11px] bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
                 <span class="text-amber-400 font-bold" id="header-lt">💎 0</span>
                 <span class="text-slate-300 ml-1 font-bold" id="header-hammers">🔨 0</span>
             </div>
-            <button onclick="openDevModal()" class="px-1.5 py-0.5 bg-rose-950/60 text-rose-300 border border-rose-800 rounded text-[10px] font-bold">
+            <button onclick="openDevModal()" class="px-2 py-0.5 bg-rose-950 text-rose-300 border border-rose-800 rounded text-[10px] font-bold">
                 DEV
             </button>
         </div>
@@ -41,88 +47,91 @@
         <!-- MÀN HÌNH 0: CHỌN 5 SLOT NHÂN VẬT -->
         <div id="tab-slots" class="space-y-3">
             <div class="flex justify-between items-center">
-                <h2 class="text-xs font-bold text-amber-400 uppercase tracking-wider">Luân Hồi Điện (5 Slot Hồn Kiếp)</h2>
-                <span class="text-[10px] text-slate-500">Chọn slot để nhập thể</span>
+                <h2 class="text-xs font-bold text-amber-400 uppercase tracking-wider">Luân Hồi Điện (5 Slot)</h2>
+                <span class="text-[10px] text-slate-500">Khởi đầu từ 1 tuổi</span>
             </div>
             <div id="slots-container" class="space-y-2"></div>
         </div>
 
-        <!-- TAB 1: TU HÀNH & CỐT TRUYỆN TĂNG TUỔI -->
+        <!-- TAB 1: TU HÀNH & CỐT TRUYỆN MÔ PHỎNG PHÀM NHÂN -->
         <div id="tab-tuhan" class="hidden space-y-3">
-            <div class="bg-gradient-to-r from-slate-900 to-amber-950/30 p-3 rounded-xl border border-amber-600/30">
+            <div class="bg-gradient-to-r from-slate-900 via-amber-950/20 to-slate-900 p-3 rounded-xl border border-amber-600/30">
                 <div class="flex justify-between items-center mb-1">
                     <span class="text-xs text-amber-400 font-bold" id="story-char-name">Đạo Hữu</span>
-                    <span class="text-[11px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full font-bold" id="story-realm">Luyện Khí Tầng 1</span>
+                    <span class="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full font-bold" id="story-realm">Phàm Nhân</span>
                 </div>
-                <p class="text-[11px] text-slate-300">Thọ Nguyên: <span id="story-age" class="text-amber-400 font-bold">16</span> / 200 Tuổi</p>
+                <div class="flex justify-between text-[11px] text-slate-300 mt-2">
+                    <p>Tuổi: <span id="story-age" class="text-amber-400 font-bold">1</span> / 200 Tuổi</p>
+                    <p id="story-destiny-badge" class="text-purple-400 font-bold">Chí Tôn Cốt</p>
+                </div>
+            </div>
+
+            <!-- Khung Linh Căn Xuất Chiến -->
+            <div class="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800">
+                <div class="flex justify-between items-center mb-1.5">
+                    <h3 class="text-[11px] font-bold text-amber-400 uppercase"><i class="fa-solid fa-seedling"></i> Linh Căn Xuất Chiến (<span id="roots-count">0</span>/7)</h3>
+                    <span class="text-[9px] text-slate-500">Bất Hủ Bá Thần Quyết</span>
+                </div>
+                <div id="roots-list" class="grid grid-cols-2 gap-1.5 text-[10px]"></div>
             </div>
 
             <div class="p-3 bg-slate-900/90 rounded-xl border border-slate-800 space-y-2">
-                <h3 class="text-xs font-bold text-slate-300 uppercase"><i class="fa-solid fa-book-open text-amber-500"></i> Biên Niên Sử Tu Tiên</h3>
-                <div id="story-log-box" class="h-44 overflow-y-auto bg-slate-950 p-2 rounded text-[11px] font-mono space-y-1 text-slate-300 border border-slate-900 custom-scroll">
-                    <p class="text-slate-500">Bấm 'Tu Luyện 1 Năm' để kích hoạt kỳ ngộ và nhận Linh Thạch...</p>
+                <h3 class="text-xs font-bold text-slate-300 uppercase"><i class="fa-solid fa-scroll text-amber-500"></i> Nhật Ký Tu Tiên</h3>
+                <div id="story-log-box" class="h-44 overflow-y-auto bg-slate-950 p-2.5 rounded text-[11px] font-mono space-y-1.5 text-slate-300 border border-slate-900 custom-scroll">
+                    <p class="text-slate-500">Bấm 'Tu Luyện 1 Năm' để qua năm, trưởng thành và tìm kiếm cơ duyên...</p>
                 </div>
-                <button onclick="doStoryStep()" class="w-full py-2.5 bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-slate-950 font-black text-xs rounded-lg active:scale-95 transition shadow-lg">
-                    ⚡ TU LUYỆN 1 NĂM (TĂNG TU VI & NHẬN LINH THẠCH)
+                <button onclick="doStoryStep()" class="w-full py-2.5 bg-gradient-to-r from-amber-600 to-yellow-600 text-slate-950 font-black text-xs rounded-lg active:scale-95 transition shadow-lg">
+                    ⏳ TU LUYỆN 1 NĂM (TĂNG TUỔI & TÌM KỲ NGỘ)
                 </button>
             </div>
         </div>
 
-        <!-- TAB 2: LỊCH LUYỆN & SĂN BOSS RƠI BÚA 1% -->
+        <!-- TAB 2: LỊCH LUYỆN & SĂN BOSS RƠI BÚA 1% PITY 80 -->
         <div id="tab-lichluyen" class="hidden space-y-3">
             <div class="p-3 bg-slate-900/90 rounded-xl border border-rose-900/40 space-y-2">
                 <div class="flex justify-between items-center">
-                    <h3 class="text-xs font-bold text-rose-400 uppercase"><i class="fa-solid fa-skull text-rose-500"></i> Hoang Cổ Bí Cảnh (Boss Yêu Thú)</h3>
+                    <h3 class="text-xs font-bold text-rose-400 uppercase"><i class="fa-solid fa-skull text-rose-500"></i> Yêu Thú Loạn Tinh Hải</h3>
                     <span class="text-[10px] text-amber-400" id="boss-pity-text">Bảo hiểm Búa: 0/80</span>
                 </div>
-                <p class="text-[11px] text-slate-400">Trảm sát Boss có tỉ lệ cố định 1% rơi Thiên Công Thần Chùy (Búa). Chạm 80 lần chắc chắn nhận 1 Búa.</p>
+                <p class="text-[11px] text-slate-400">Trảm sát Boss tỉ lệ rơi búa cường hóa 1% (+ Khí Vận). Sau 80 lần chắc chắn nhận 1 Búa.</p>
                 <div id="boss-result-box" class="p-2 bg-slate-950 rounded text-xs text-amber-300 min-h-[50px] border border-slate-800 flex items-center justify-center text-center">
-                    Sẵn sàng khiêu chiến Boss bí cảnh...
+                    Sẵn sàng săn Boss Yêu Thú...
                 </div>
                 <button onclick="doHuntBoss()" class="w-full py-2.5 bg-rose-700 hover:bg-rose-600 text-white font-black text-xs rounded-lg active:scale-95 transition shadow-lg">
-                    ⚔️ TRẢM SÁT BOSS YÊU THÚ
+                    ⚔️ TRẢM SÁT YÊU VƯƠNG
                 </button>
             </div>
         </div>
 
         <!-- TAB 3: TIÊN THÂN (9 TRANG BỊ, ĐẬP ĐỒ +20, KHO 500 SLOT) -->
         <div id="tab-tienthan" class="hidden space-y-3">
-            <!-- 9 Slot Trang Bị -->
-            <div class="bg-slate-900/90 p-3 rounded-xl border border-slate-800">
-                <h3 class="text-xs font-bold text-amber-400 uppercase mb-2"><i class="fa-solid fa-shield-halved"></i> 9 Ô Pháp Bảo Xuất Chiến</h3>
-                <div class="grid grid-cols-3 gap-2" id="equipment-grid">
-                    <!-- 9 slots render here -->
-                </div>
+            <div class="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800">
+                <h3 class="text-[11px] font-bold text-amber-400 uppercase mb-2"><i class="fa-solid fa-shield-halved"></i> 9 Vị Trí Pháp Bảo Trang Bị</h3>
+                <div class="grid grid-cols-3 gap-1.5" id="equipment-grid"></div>
             </div>
 
-            <!-- Thuộc tính tổng thể -->
-            <div class="bg-slate-900/90 p-3 rounded-xl border border-slate-800">
-                <h3 class="text-xs font-bold text-slate-300 uppercase mb-2">Chỉ Số Tổng (Đã cộng Giáp & Trần Cap)</h3>
-                <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]" id="stats-display">
-                    <!-- stats render -->
-                </div>
+            <div class="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800">
+                <h3 class="text-[11px] font-bold text-slate-300 uppercase mb-1.5">Thuộc Tính Toàn Diện</h3>
+                <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]" id="stats-display"></div>
             </div>
 
-            <!-- Túi Đồ 500 Slot & Bán Hoàn 70% -->
-            <div class="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-2">
+            <div class="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800 space-y-2">
                 <div class="flex justify-between items-center">
-                    <h3 class="text-xs font-bold text-amber-400 uppercase"><i class="fa-solid fa-box-archive"></i> Túi Trữ Vật (<span id="inv-count">0</span>/500)</h3>
-                    <span class="text-[10px] text-slate-500">Bán hoàn 70% Linh Thạch</span>
+                    <h3 class="text-[11px] font-bold text-amber-400 uppercase"><i class="fa-solid fa-box-archive"></i> Túi Trữ Vật (<span id="inv-count">0</span>/500)</h3>
+                    <span class="text-[9px] text-slate-500">Bán hoàn 70% Linh Thạch</span>
                 </div>
-                <div id="inventory-list" class="space-y-1.5 max-h-48 overflow-y-auto custom-scroll">
-                    <!-- item list -->
-                </div>
+                <div id="inventory-list" class="space-y-1.5 max-h-40 overflow-y-auto custom-scroll"></div>
             </div>
         </div>
 
-        <!-- TAB 4: VẠN BẢO CÁC (SHOP CẢNH GIỚI) -->
+        <!-- TAB 4: VẠN BẢO CÁC (SHOP) -->
         <div id="tab-shop" class="hidden space-y-2">
-            <h2 class="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2">Vạn Bảo Các (Thương Hội)</h2>
+            <h2 class="text-xs font-bold text-amber-400 uppercase tracking-wider mb-1">Vạn Bảo Các (Thương Hội)</h2>
             <div class="space-y-2">
                 <div class="p-2.5 bg-slate-900 rounded-lg border border-slate-800 flex justify-between items-center">
                     <div>
                         <p class="text-xs font-bold text-slate-200">🧪 Cửu Chuyển Hồi Linh Đan</p>
-                        <p class="text-[10px] text-slate-400">Đan dược hồi phục 35% Max MP trong trận</p>
+                        <p class="text-[10px] text-slate-400">Hồi ngay 35% Max MP trong trận</p>
                     </div>
                     <button onclick="buyShopItem('item_dan_mp')" class="px-2.5 py-1 bg-amber-600 text-slate-950 font-bold text-[11px] rounded">400 💎</button>
                 </div>
@@ -136,28 +145,21 @@
                 <div class="p-2.5 bg-slate-900 rounded-lg border border-slate-800 flex justify-between items-center">
                     <div>
                         <p class="text-xs font-bold text-slate-200">🥋 Huyền Vũ Hộ Tâm Giáp (Áo)</p>
-                        <p class="text-[10px] text-slate-400">+180 Giáp Liên Quân, +400 Máu</p>
+                        <p class="text-[10px] text-slate-400">+180 Giáp, +400 Máu</p>
                     </div>
                     <button onclick="buyShopItem('item_ao_giap')" class="px-2.5 py-1 bg-amber-600 text-slate-950 font-bold text-[11px] rounded">1,500 💎</button>
                 </div>
                 <div class="p-2.5 bg-slate-900 rounded-lg border border-slate-800 flex justify-between items-center">
                     <div>
-                        <p class="text-xs font-bold text-slate-200">💍 Lưu Ly Giới Chỉ (Nhẫn 1)</p>
-                        <p class="text-[10px] text-slate-400">+8% Bạo Kích, +5% Hút Máu</p>
+                        <p class="text-xs font-bold text-amber-400">🔨 Thiên Công Thần Chùy (Búa)</p>
+                        <p class="text-[10px] text-slate-400">Cường hóa trang bị tối đa +20 (75%)</p>
                     </div>
-                    <button onclick="buyShopItem('item_nhan_bao')" class="px-2.5 py-1 bg-amber-600 text-slate-950 font-bold text-[11px] rounded">1,800 💎</button>
-                </div>
-                <div class="p-2.5 bg-slate-900 rounded-lg border border-slate-800 flex justify-between items-center">
-                    <div>
-                        <p class="text-xs font-bold text-amber-400">🔨 Thiên Công Thần Chùy (Búa Rèn)</p>
-                        <p class="text-[10px] text-slate-400">Dùng để cường hóa trang bị tối đa +20</p>
-                    </div>
-                    <button onclick="buyShopItem('item_bua_ren')" class="px-2.5 py-1 bg-amber-600 text-slate-950 font-bold text-[11px] rounded">2,500 💎</button>
+                    <button onclick="buyShopItem('item_bua_ren')" class="px-2.5 py-1 bg-amber-600 text-slate-950 font-bold text-[11px] rounded">2,000 💎</button>
                 </div>
             </div>
         </div>
 
-        <!-- TAB 5: ĐẠI ĐẠO LÔI ĐÀI (PVP ONLINE) -->
+        <!-- TAB 5: ĐẠI ĐẠO LÔI ĐÀI (PVP) -->
         <div id="tab-pvp" class="hidden space-y-3">
             <div class="flex justify-between items-center">
                 <h3 class="font-bold text-slate-200 text-xs uppercase"><i class="fa-solid fa-swords text-amber-500"></i> Tu Sĩ Đang Online</h3>
@@ -167,7 +169,67 @@
         </div>
     </main>
 
-    <!-- MODAL CHIẾN ĐẤU BATTLE LOGS -->
+    <!-- MODAL KHỞI TẠO NHÂN VẬT 3 BƯỚC -->
+    <div id="create-modal" class="hidden fixed inset-0 bg-black/90 flex items-center justify-center p-3 z-50">
+        <div class="bg-slate-900 border border-amber-600/70 w-full max-w-sm rounded-xl p-4 space-y-3 text-xs">
+            <div class="flex justify-between items-center border-b border-slate-800 pb-2">
+                <h3 class="font-bold text-amber-400 uppercase">Khởi Sinh Kiếp Tu Tiên (1 Tuổi)</h3>
+                <button onclick="closeCreateModal()" class="text-slate-400 text-sm"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <div>
+                <label class="block text-slate-400 text-[10px] uppercase font-bold mb-1">Đạo Hiệu</label>
+                <input type="text" id="char-input-name" placeholder="Nhập tên nhân vật..." class="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded text-white outline-none">
+            </div>
+
+            <div class="space-y-1.5 bg-slate-950 p-2.5 rounded border border-slate-800">
+                <div class="flex justify-between text-[11px] font-bold text-amber-400">
+                    <span>Phân Bổ Tiềm Năng</span>
+                    <span>Còn lại: <span id="remain-points">0</span>/30</span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span>Thể Chất (HP):</span>
+                    <div class="flex items-center gap-2">
+                        <button onclick="adjustPoint('the_chat', -1)" class="w-5 h-5 bg-slate-800 rounded">-</button>
+                        <span id="pt-the_chat" class="w-4 text-center font-bold">8</span>
+                        <button onclick="adjustPoint('the_chat', 1)" class="w-5 h-5 bg-slate-800 rounded">+</button>
+                    </div>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span>Sức Mạnh (Công):</span>
+                    <div class="flex items-center gap-2">
+                        <button onclick="adjustPoint('suc_manh', -1)" class="w-5 h-5 bg-slate-800 rounded">-</button>
+                        <span id="pt-suc_manh" class="w-4 text-center font-bold">8</span>
+                        <button onclick="adjustPoint('suc_manh', 1)" class="w-5 h-5 bg-slate-800 rounded">+</button>
+                    </div>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span>Thân Pháp (Tốc/Né):</span>
+                    <div class="flex items-center gap-2">
+                        <button onclick="adjustPoint('than_phap', -1)" class="w-5 h-5 bg-slate-800 rounded">-</button>
+                        <span id="pt-than_phap" class="w-4 text-center font-bold">7</span>
+                        <button onclick="adjustPoint('than_phap', 1)" class="w-5 h-5 bg-slate-800 rounded">+</button>
+                    </div>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span>Căn Cốt (Thủ/Phản):</span>
+                    <div class="flex items-center gap-2">
+                        <button onclick="adjustPoint('can_cot', -1)" class="w-5 h-5 bg-slate-800 rounded">-</button>
+                        <span id="pt-can_cot" class="w-4 text-center font-bold">7</span>
+                        <button onclick="adjustPoint('can_cot', 1)" class="w-5 h-5 bg-slate-800 rounded">+</button>
+                    </div>
+                </div>
+            </div>
+
+            <p class="text-[10px] text-slate-400 italic">• Hệ thống tự động gacha 1-5 Linh Căn và thức tỉnh Dị Cốt/Thiên Mệnh ngay khi bấm Tạo!</p>
+
+            <button onclick="confirmCreateChar()" class="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold rounded-lg text-xs">
+                Khai Mở Hồn Kiếp (Bắt đầu từ 1 Tuổi)
+            </button>
+        </div>
+    </div>
+
+    <!-- MODAL BATTLE LOGS -->
     <div id="battle-modal" class="hidden fixed inset-0 bg-black/95 flex flex-col p-4 z-50">
         <div class="flex justify-between items-center pb-2 border-b border-slate-800">
             <h3 class="font-bold text-amber-400 text-xs" id="battle-title">CHIẾN ĐẤU</h3>
@@ -177,20 +239,20 @@
         <button onclick="closeBattleModal()" class="w-full py-2 bg-amber-600 text-slate-950 font-bold rounded text-xs">Thu Nhận Kết Quả</button>
     </div>
 
-    <!-- MODAL DEVGAME -->
+    <!-- MODAL DEV -->
     <div id="dev-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
         <div class="bg-slate-900 border border-amber-600 w-full max-w-xs rounded-xl p-4 space-y-3">
-            <h3 class="font-bold text-amber-400 text-xs uppercase">Mở Khóa Quyền Dev</h3>
+            <h3 class="font-bold text-amber-400 text-xs uppercase">Mở Khóa Dev Mode</h3>
             <input type="password" id="dev-pass" placeholder="Nhập mật mã..." class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded text-xs text-white outline-none">
             <div class="flex gap-2">
                 <button onclick="closeDevModal()" class="flex-1 py-1.5 bg-slate-800 text-xs rounded text-slate-300">Hủy</button>
-                <button onclick="submitDevPassword()" class="flex-1 py-1.5 bg-amber-600 text-slate-950 font-bold text-xs rounded">Kích Hoạt</button>
+                <button onclick="submitDevPassword()" class="flex-1 py-1.5 bg-amber-600 text-slate-950 font-bold text-xs rounded">Xác Nhận</button>
             </div>
         </div>
     </div>
 
-    <!-- BOTTOM NAVIGATION (5 TABS CHUẨN MINI APP) -->
-    <nav class="bg-slate-950 border-t border-slate-800 flex justify-around p-2 sticky bottom-0 z-20" id="main-nav">
+    <!-- NAVIGATION 5 TABS -->
+    <nav class="bg-slate-950 border-t border-slate-800 flex justify-around p-2 sticky bottom-0 z-20">
         <button onclick="switchTab('tab-tuhan')" class="nav-btn flex flex-col items-center text-amber-500 text-[10px]">
             <i class="fa-solid fa-feather text-sm mb-0.5"></i>Tu Hành
         </button>
@@ -213,10 +275,27 @@
         if (tg) { tg.ready(); tg.expand(); }
         const tgUser = tg?.initDataUnsafe?.user;
         const telegramId = tgUser?.id ? String(tgUser.id) : "987654321";
-        const displayName = tgUser?.username ? `@${tgUser.username}` : (tgUser?.first_name || "Đạo Hữu Vô Danh");
+        const displayName = tgUser?.username ? `@${tgUser.username}` : (tgUser?.first_name || "Đạo Hữu");
 
         let currentChar = null;
         let isDev = false;
+        let targetSlotIndex = 1;
+
+        let points = { the_chat: 8, suc_manh: 8, than_phap: 7, can_cot: 7 };
+
+        function updateRemainPoints() {
+            const sum = points.the_chat + points.suc_manh + points.than_phap + points.can_cot;
+            document.getElementById('remain-points').innerText = 30 - sum;
+        }
+
+        function adjustPoint(type, delta) {
+            const sum = points.the_chat + points.suc_manh + points.than_phap + points.can_cot;
+            if (delta > 0 && sum >= 30) return;
+            if (delta < 0 && points[type] <= 1) return;
+            points[type] += delta;
+            document.getElementById(`pt-${type}`).innerText = points[type];
+            updateRemainPoints();
+        }
 
         async function loadSlots() {
             const res = await fetch(`/api/slots/${telegramId}`);
@@ -245,25 +324,46 @@
                 } else {
                     card.innerHTML = `
                         <span class="text-xs text-slate-500">Slot ${i}: Trống</span>
-                        <button onclick="createSlot(${i})" class="px-3 py-1 bg-slate-800 text-amber-400 text-xs rounded-lg border border-slate-700">Khởi Tạo</button>
+                        <button onclick="openCreateModal(${i})" class="px-3 py-1 bg-slate-800 text-amber-400 text-xs rounded-lg border border-slate-700">Khởi Tạo</button>
                     `;
                 }
                 container.appendChild(card);
             }
         }
 
-        async function createSlot(slotIndex) {
-            const name = prompt(`Nhập Đạo Hiệu cho Slot ${slotIndex}:`, `Tu Sĩ ${Math.floor(Math.random()*1000)}`);
-            if (!name) return;
-            const payload = { telegram_id: telegramId, username: displayName, slot_index: slotIndex, name: name };
+        function openCreateModal(slotIdx) {
+            targetSlotIndex = slotIdx;
+            document.getElementById('char-input-name').value = `Tu Sĩ ${Math.floor(Math.random()*1000)}`;
+            updateRemainPoints();
+            document.getElementById('create-modal').classList.remove('hidden');
+        }
+        function closeCreateModal() { document.getElementById('create-modal').classList.add('hidden'); }
+
+        async function confirmCreateChar() {
+            const name = document.getElementById('char-input-name').value.trim();
+            if (!name) return alert("Vui lòng nhập đạo hiệu!");
+
+            const payload = {
+                telegram_id: telegramId,
+                username: displayName,
+                slot_index: targetSlotIndex,
+                name: name,
+                allocated_points: points
+            };
             if (isDev) payload.admin_password = "DevGame";
 
             const res = await fetch('/api/characters/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-            if (res.ok) { isDev = false; loadSlots(); } else { alert((await res.json()).detail); }
+            if (res.ok) {
+                closeCreateModal();
+                isDev = false;
+                loadSlots();
+            } else {
+                alert((await res.json()).detail);
+            }
         }
 
         async function deleteChar(slotIndex, expectedName) {
-            const confirmName = prompt(`Nhập chính xác tên [${expectedName}] để xóa:`);
+            const confirmName = prompt(`Nhập chính xác tên [${expectedName}] để xóa vĩnh viễn:`);
             if (confirmName !== expectedName) return alert("Sai tên xác nhận!");
             const res = await fetch('/api/characters/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ telegram_id: telegramId, slot_index: slotIndex, confirm_name: confirmName }) });
             if (res.ok) loadSlots();
@@ -287,61 +387,75 @@
             document.getElementById('story-age').innerText = currentChar.age;
             document.getElementById('boss-pity-text').innerText = `Bảo hiểm Búa: ${currentChar.pity_boss}/80`;
 
-            // Tab Tiên Thân - 9 Slots
+            if (currentChar.destiny) {
+                document.getElementById('story-destiny-badge').innerText = `✨ ${currentChar.destiny.name}`;
+            }
+
+            // Linh Căn
+            const rootsList = document.getElementById('roots-list');
+            rootsList.innerHTML = "";
+            currentChar.roots.forEach(r => {
+                const d = document.createElement('div');
+                d.className = "p-1.5 bg-slate-950 rounded border border-slate-800";
+                d.innerHTML = `<span class="font-bold tier-${r.tier}">[${r.tier}] ${r.name}</span><p class="text-slate-400 text-[9px] truncate">${r.desc}</p>`;
+                rootsList.appendChild(d);
+            });
+            document.getElementById('roots-count').innerText = currentChar.roots.length;
+
+            // 9 Slot Trang Bị
             const eqGrid = document.getElementById('equipment-grid');
             eqGrid.innerHTML = "";
             const slotNames = {
-                vk1: "Vũ Khí 1", vk2: "Vũ Khí 2", mu: "Mũ Giáp",
-                ao: "Chiến Bào", quan: "Hộ Uyển", giay: "Tiên Hài",
+                vk1: "Vũ Khí 1", vk2: "Vũ Khí 2", mu: "Mũ",
+                ao: "Áo", quan: "Quần", giay: "Giày",
                 nhan1: "Nhẫn 1", nhan2: "Nhẫn 2", nhan3: "Nhẫn 3"
             };
 
             for (const [key, label] of Object.entries(slotNames)) {
                 const it = currentChar.equipment[key];
                 const d = document.createElement('div');
-                d.className = "p-2 rounded bg-slate-950 border border-slate-800 text-[10px] flex flex-col justify-between";
+                d.className = "p-1.5 rounded bg-slate-950 border border-slate-800 text-[10px] flex flex-col justify-between";
                 if (it) {
                     d.innerHTML = `
-                        <span class="text-slate-400">${label}</span>
-                        <p class="font-bold text-amber-300 truncate">${it.name}</p>
+                        <span class="text-slate-400 text-[9px]">${label}</span>
+                        <p class="font-bold text-amber-300 truncate text-[10px]">${it.name}</p>
                         <div class="flex justify-between items-center mt-1">
                             <span class="text-amber-500 font-bold">+${it.enhance || 0}</span>
-                            <button onclick="enhanceItem('${key}')" class="px-1.5 py-0.5 bg-amber-600 text-slate-950 font-bold rounded">Đập</button>
+                            <button onclick="enhanceItem('${key}')" class="px-1.5 py-0.5 bg-amber-600 text-slate-950 font-bold rounded text-[9px]">Đập</button>
                         </div>
                     `;
                 } else {
-                    d.innerHTML = `<span class="text-slate-500">${label}</span><p class="text-slate-600 italic">Trống</p>`;
+                    d.innerHTML = `<span class="text-slate-500 text-[9px]">${label}</span><p class="text-slate-600 italic">Trống</p>`;
                 }
                 eqGrid.appendChild(d);
             }
 
-            // Stats
+            // Stats - Giáp
             const st = currentChar.total_stats;
-            const statsDiv = document.getElementById('stats-display');
-            statsDiv.innerHTML = `
+            document.getElementById('stats-display').innerHTML = `
                 <p>❤️ Máu: <span class="text-white font-bold">${st.hp}</span></p>
                 <p>🌀 Linh Lực: <span class="text-white font-bold">${st.mp}</span></p>
                 <p>⚔️ Sức Mạnh: <span class="text-white font-bold">${st.suc_manh}</span></p>
                 <p>⚡ Tốc Độ: <span class="text-white font-bold">${st.toc_do}</span></p>
-                <p>🛡️ Giáp Liên Quân: <span class="text-white font-bold">${st.thu}</span></p>
-                <p>💨 Né Tránh (Cap 70%): <span class="text-white font-bold">${st.ne_tranh}%</span></p>
-                <p>💥 Bạo Kích (Cap 40%): <span class="text-white font-bold">${st.bao_kich}%</span></p>
-                <p>🩸 Hút Máu (Cap 50%): <span class="text-white font-bold">${st.hut_mau}%</span></p>
+                <p>🛡️ Giáp: <span class="text-white font-bold">${st.thu}</span></p>
+                <p>💨 Né Tránh: <span class="text-white font-bold">${st.ne_tranh}%</span></p>
+                <p>💥 Bạo Kích: <span class="text-white font-bold">${st.bao_kich}%</span></p>
+                <p>🩸 Hút Máu: <span class="text-white font-bold">${st.hut_mau}%</span></p>
             `;
 
-            // Kho đồ 500 slot
+            // Túi Đồ 500 Slot
             document.getElementById('inv-count').innerText = currentChar.inventory.length;
             const invDiv = document.getElementById('inventory-list');
             invDiv.innerHTML = "";
             if (currentChar.inventory.length === 0) {
-                invDiv.innerHTML = "<p class='text-[10px] text-slate-500 italic py-2'>Túi trữ vật trống rỗng.</p>";
+                invDiv.innerHTML = "<p class='text-[10px] text-slate-500 italic py-2'>Túi trữ vật trống.</p>";
             } else {
                 currentChar.inventory.forEach((item, idx) => {
                     const row = document.createElement('div');
-                    row.className = "flex justify-between items-center p-1.5 bg-slate-950 rounded border border-slate-900 text-[11px]";
+                    row.className = "flex justify-between items-center p-1.5 bg-slate-950 rounded border border-slate-900 text-[10px]";
                     row.innerHTML = `
                         <span class="text-slate-300">${item.name}</span>
-                        <button onclick="sellItem(${idx})" class="px-2 py-0.5 bg-rose-950 text-rose-300 rounded border border-rose-800 text-[10px]">Bán (+70%)</button>
+                        <button onclick="sellItem(${idx})" class="px-2 py-0.5 bg-rose-950 text-rose-300 rounded border border-rose-800 text-[9px]">Bán (+70%)</button>
                     `;
                     invDiv.appendChild(row);
                 });
@@ -397,16 +511,16 @@
             const data = await res.json();
             const list = document.getElementById('pvp-list');
             list.innerHTML = "";
-            if (data.opponents.length === 0) { list.innerHTML = "<p class='text-xs text-slate-500 py-4 text-center'>Chưa có tu sĩ khác online.</p>"; return; }
+            if (data.opponents.length === 0) { list.innerHTML = "<p class='text-xs text-slate-500 py-4 text-center'>Chưa có tu sĩ online.</p>"; return; }
             data.opponents.forEach(op => {
                 const d = document.createElement('div');
-                d.className = "p-2.5 bg-slate-900 border border-slate-800 rounded-lg flex justify-between items-center";
+                d.className = "p-2 bg-slate-900 border border-slate-800 rounded-lg flex justify-between items-center";
                 d.innerHTML = `
                     <div>
                         <p class="font-bold text-slate-200 text-xs">${op.name} ${op.is_dev ? '<span class="text-rose-400">[DEV]</span>' : ''}</p>
                         <p class="text-[10px] text-slate-400">${op.realm} • HP: ${op.hp}</p>
                     </div>
-                    <button onclick="startPvP(${op.id}, '${op.name}')" class="px-3 py-1 bg-rose-600 text-white font-bold text-xs rounded">Quyết Đấu</button>
+                    <button onclick="startPvP(${op.id}, '${op.name}')" class="px-2.5 py-1 bg-rose-600 text-white font-bold text-xs rounded">Quyết Đấu</button>
                 `;
                 list.appendChild(d);
             });
@@ -415,7 +529,7 @@
         async function startPvP(targetId, targetName) {
             document.getElementById('battle-title').innerText = `${currentChar.name} VS ${targetName}`;
             const logBox = document.getElementById('battle-logs');
-            logBox.innerHTML = "<p class='text-amber-400'>Đang giao tranh trên lôi đài...</p>";
+            logBox.innerHTML = "<p class='text-amber-400'>Đang tiến vào lôi đài...</p>";
             document.getElementById('battle-modal').classList.remove('hidden');
 
             const res = await fetch('/api/pvp/challenge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ challenger_char_id: currentChar.char_id, target_char_id: targetId }) });
@@ -444,7 +558,7 @@
         function closeDevModal() { document.getElementById('dev-modal').classList.add('hidden'); }
         function submitDevPassword() {
             if (document.getElementById('dev-pass').value === "DevGame") {
-                isDev = true; alert("Đã mở khóa Dev! Tạo slot mới sẽ nhận max chỉ số thần thánh."); closeDevModal();
+                isDev = true; alert("Đã mở khóa Dev Mode! Tạo slot mới sẽ nhận full Linh Căn SSS."); closeDevModal();
             } else { alert("Sai mật khẩu!"); }
         }
 
