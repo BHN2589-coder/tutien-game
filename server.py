@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-app = FastAPI(title="Cultivation Full Game Engine")
+app = FastAPI(title="Cultivation Game Engine Full")
 
 app.add_middleware(
     CORSMiddleware,
@@ -47,7 +47,6 @@ def init_db():
             roots_json TEXT,
             inventory_json TEXT,
             equipment_json TEXT,
-            is_deleted BOOLEAN DEFAULT 0,
             UNIQUE(telegram_id, slot_index)
         )
     """)
@@ -56,7 +55,7 @@ def init_db():
 
 init_db()
 
-# --- HẰNG SỐ & CÔNG THỨC CHIẾN ĐẤU ---
+# --- HẰNG SỐ & COMBAT ENGINE ---
 ARMOR_CONSTANT = 600.0
 CAP_DODGE = 70.0
 CAP_LIFESTEAL = 50.0
@@ -170,7 +169,6 @@ def execute_strike(atk: Fighter, df: Fighter, logs: list, turn: int, is_counter:
         logs.append(f"🛡️ [Hiệp {turn} - Phản Kích] {df.name} gồng mình đánh trả!")
         execute_strike(df, atk, logs, turn, is_counter=True)
 
-# --- RECALCULATE STATS FROM EQUIPMENT ---
 def calculate_character_total_stats(base_stats: dict, equipment: dict) -> dict:
     total = dict(base_stats)
     for slot, item in equipment.items():
@@ -183,7 +181,7 @@ def calculate_character_total_stats(base_stats: dict, equipment: dict) -> dict:
                     total[k] = math.floor(v * enhance_mult)
     return total
 
-# --- API SCHEMAS ---
+# --- PDUANTIC SCHEMAS ---
 class CreateCharRequest(BaseModel):
     telegram_id: str
     username: Optional[str] = "Đạo Hữu"
@@ -215,14 +213,14 @@ class DeleteCharRequest(BaseModel):
     slot_index: int
     confirm_name: str
 
-# --- REST APIS ---
+# --- APIS QUẢN LÝ SLOT (ĐÃ SỬA LỖI TRIỆT ĐỂ) ---
 @app.get("/api/slots/{telegram_id}")
 def get_user_slots(telegram_id: str):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("""
         SELECT slot_index, id, name, realm, age, linh_thach, hammers, pity_boss, is_dev, stats_json, roots_json, equipment_json, inventory_json 
-        FROM characters WHERE telegram_id = ? AND is_deleted = 0
+        FROM characters WHERE telegram_id = ?
     """, (str(telegram_id),))
     rows = c.fetchall()
     conn.close()
@@ -234,6 +232,7 @@ def get_user_slots(telegram_id: str):
         total_stats = calculate_character_total_stats(base_stats, eq)
         slots[r[0]] = {
             "char_id": r[1],
+            "slot_index": r[0],
             "name": r[2],
             "realm": r[3],
             "age": r[4],
@@ -282,19 +281,19 @@ def create_character(req: CreateCharRequest):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("INSERT OR IGNORE INTO users (telegram_id, username) VALUES (?, ?)", (str(req.telegram_id), req.username))
-    try:
-        c.execute("""
-            INSERT INTO characters (telegram_id, slot_index, name, realm, age, linh_thach, hammers, pity_boss, is_dev, stats_json, roots_json, inventory_json, equipment_json)
-            VALUES (?, ?, ?, ?, 16, ?, ?, 0, ?, ?, ?, ?, ?)
-        """, (
-            str(req.telegram_id), req.slot_index, req.name, realm, lt, hammers,
-            1 if is_dev else 0, json.dumps(stats), json.dumps(roots),
-            json.dumps([]), json.dumps(starter_equip)
-        ))
-        conn.commit()
-    except sqlite3.IntegrityError:
-        conn.close()
-        raise HTTPException(400, "Slot này đã có nhân vật!")
+    
+    # XÓA BẢN GHI RÁC ĐỂ TRÁNH XUNG ĐỘT KHÓA UNIQUE
+    c.execute("DELETE FROM characters WHERE telegram_id = ? AND slot_index = ?", (str(req.telegram_id), req.slot_index))
+    
+    c.execute("""
+        INSERT INTO characters (telegram_id, slot_index, name, realm, age, linh_thach, hammers, pity_boss, is_dev, stats_json, roots_json, inventory_json, equipment_json)
+        VALUES (?, ?, ?, ?, 16, ?, ?, 0, ?, ?, ?, ?, ?)
+    """, (
+        str(req.telegram_id), req.slot_index, req.name, realm, lt, hammers,
+        1 if is_dev else 0, json.dumps(stats), json.dumps(roots),
+        json.dumps([]), json.dumps(starter_equip)
+    ))
+    conn.commit()
     conn.close()
     return {"status": "success", "is_dev": is_dev}
 
@@ -302,17 +301,23 @@ def create_character(req: CreateCharRequest):
 def delete_character(req: DeleteCharRequest):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT id, name FROM characters WHERE telegram_id = ? AND slot_index = ? AND is_deleted = 0", (str(req.telegram_id), req.slot_index))
+    c.execute("SELECT id, name FROM characters WHERE telegram_id = ? AND slot_index = ?", (str(req.telegram_id), req.slot_index))
     row = c.fetchone()
-    if not row or row[1].strip() != req.confirm_name.strip():
+    if not row:
+        conn.close()
+        raise HTTPException(404, "Không tìm thấy nhân vật!")
+    
+    if row[1].strip() != req.confirm_name.strip():
         conn.close()
         raise HTTPException(400, "Tên xác nhận không trùng khớp!")
-    c.execute("UPDATE characters SET is_deleted = 1 WHERE id = ?", (row[0],))
+
+    # XÓA VĨNH VIỄN KHỎI DATABASE ĐỂ GIẢI PHÓNG SLOT
+    c.execute("DELETE FROM characters WHERE id = ?", (row[0],))
     conn.commit()
     conn.close()
     return {"status": "success"}
 
-# --- TÍNH NĂNG 1: CỐT TRUYỆN / TU HÀNH TĂNG TUỔI ---
+# --- CÁC TÍNH NĂNG GAMEPLAY ---
 @app.post("/api/action/story_step")
 def story_step(req: ActionRequest):
     conn = sqlite3.connect(DB_PATH)
@@ -338,7 +343,6 @@ def story_step(req: ActionRequest):
     ]
     log = random.choice(events)
 
-    # Đột phá cảnh giới sau mỗi 5 năm
     new_realm = row[3]
     if age % 5 == 0:
         idx = min(len(REALMS)-1, REALMS.index(row[3]) + 1 if row[3] in REALMS else 0)
@@ -350,7 +354,6 @@ def story_step(req: ActionRequest):
     conn.close()
     return {"status": "success", "log": log, "age": age, "linh_thach": new_lt, "realm": new_realm}
 
-# --- TÍNH NĂNG 2: SĂN BOSS RƠI BÚA 1% (PITY 80) ---
 @app.post("/api/action/hunt_boss")
 def hunt_boss(req: ActionRequest):
     conn = sqlite3.connect(DB_PATH)
@@ -366,7 +369,6 @@ def hunt_boss(req: ActionRequest):
     gain_lt = random.randint(300, 600)
     lt += gain_lt
 
-    # Base rate 1.0% + điểm khí vận
     drop_rate = 1.0 + (stats.get("khi_van", 0) / 100.0)
     got_hammer = False
 
@@ -383,7 +385,6 @@ def hunt_boss(req: ActionRequest):
     conn.close()
     return {"status": "success", "msg": msg, "got_hammer": got_hammer, "hammers": hammers, "linh_thach": lt, "pity": pity}
 
-# --- TÍNH NĂNG 3: ĐẬP ĐỒ TỐI ĐA +20 (TỈ LỆ 75%, BẢO HIỂM +10, +15) ---
 @app.post("/api/action/enhance")
 def enhance_equipment(req: EnhanceRequest):
     conn = sqlite3.connect(DB_PATH)
@@ -429,7 +430,6 @@ def enhance_equipment(req: EnhanceRequest):
     conn.close()
     return {"status": "success", "msg": msg, "success": success, "new_enhance": item["enhance"], "hammers": hammers, "linh_thach": lt}
 
-# --- TÍNH NĂNG 4: BÁN ĐỒ TRONG TÚI HOÀN 70% LINH THẠCH ---
 @app.post("/api/action/sell_item")
 def sell_item(req: SellRequest):
     conn = sqlite3.connect(DB_PATH)
@@ -455,7 +455,6 @@ def sell_item(req: SellRequest):
     conn.close()
     return {"status": "success", "msg": f"Đã bán {item['name']}, hoàn lại {refund} Linh Thạch (70%).", "linh_thach": lt}
 
-# --- TÍNH NĂNG 5: VẠN BẢO CÁC (SHOP) THEO CẢNH GIỚI ---
 SHOP_CATALOG = {
     "item_dan_mp": {"name": "Cửu Chuyển Hồi Linh Đan", "type": "dan_duoc", "effect": "Hồi 35% Max MP", "price": 400},
     "item_vk_kiem": {"name": "Thanh Vân Tiên Kiếm (Huyền Phẩm)", "type": "vk2", "stats": {"suc_manh": 120, "lien_kich": 6.0}, "price": 1200},
@@ -511,14 +510,13 @@ def buy_item(req: BuyRequest):
     conn.close()
     return {"status": "success", "msg": msg, "linh_thach": lt, "hammers": hammers}
 
-# --- PVP SẢNH ĐẤU ONLINE ---
 @app.get("/api/pvp/lobby")
 def get_pvp_lobby(exclude_id: int):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("""
         SELECT id, name, realm, is_dev, stats_json, equipment_json 
-        FROM characters WHERE id != ? AND is_deleted = 0 ORDER BY id DESC LIMIT 25
+        FROM characters WHERE id != ? ORDER BY id DESC LIMIT 25
     """, (exclude_id,))
     rows = c.fetchall()
     conn.close()
