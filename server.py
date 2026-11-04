@@ -1,972 +1,2156 @@
 import os
-import time
-import sqlite3
 import json
-import math
+import time
 import random
-from typing import Optional
-from contextlib import contextmanager
+import sqlite3
+import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from typing import Optional
 
-app = FastAPI(title="Pham Nhan Tu Tien - Engine 2.0")
+app = FastAPI(title="Phàm Nhân Tu Tiên - Turso Cloud Edition")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# ==========================================
+# 1. CẤU HÌNH TURSO CLOUD DATABASE (HTTP API)
+# ==========================================
+TURSO_URL = os.getenv("TURSO_DATABASE_URL", "").strip()
+TURSO_TOKEN = os.getenv("TURSO_AUTH_TOKEN", "").strip()
+LOCAL_DB = "game_local.db"
 
-DB_PATH = "game.db"
 
-@contextmanager
-def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    try:
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
+class DatabaseAdapter:
+
+    def __init__(self):
+        self.use_turso = bool(TURSO_URL and TURSO_TOKEN)
+        if self.use_turso:
+            self.http_url = TURSO_URL.replace("libsql://", "https://").rstrip(
+                "/"
+            )
+            if not self.http_url.startswith("https://"):
+                self.http_url = "https://" + self.http_url
+
+    def _to_turso_arg(self, val):
+        if val is None:
+            return {"type": "null"}
+        elif isinstance(val, bool):
+            return {"type": "integer", "value": "1" if val else "0"}
+        elif isinstance(val, int):
+            return {"type": "integer", "value": str(val)}
+        elif isinstance(val, float):
+            return {"type": "float", "value": val}
+        return {"type": "text", "value": str(val)}
+
+    def _from_turso_val(self, cell):
+        t = cell.get("type")
+        val = cell.get("value")
+        if t == "null" or val is None:
+            return None
+        if t == "integer":
+            return int(val)
+        if t == "float":
+            return float(val)
+        return str(val)
+
+    def execute(
+        self, sql: str, params: tuple = (), fetchone=False, fetchall=False
+    ):
+        if self.use_turso:
+            headers = {
+                "Authorization": f"Bearer {TURSO_TOKEN}",
+                "Content-Type": "application/json",
+            }
+            stmt = {"sql": sql, "args": [self._to_turso_arg(p) for p in params]}
+            payload = {
+                "requests": [{"type": "execute", "stmt": stmt}, {"type": "close"}]
+            }
+            res = requests.post(
+                f"{self.http_url}/v2/pipeline",
+                headers=headers,
+                json=payload,
+                timeout=12,
+            )
+            if res.status_code != 200:
+                raise Exception(f"Turso HTTP Error: {res.text}")
+            data = res.json()
+            first_res = data.get("results", [{}])[0]
+            if first_res.get("type") == "error":
+                raise Exception(f"Turso SQL Error: {first_res.get('error')}")
+            exec_res = first_res.get("response", {}).get("result", {})
+            cols = [c["name"] for c in exec_res.get("cols", [])]
+            rows = []
+            for r in exec_res.get("rows", []):
+                row_dict = {
+                    cols[i]: self._from_turso_val(r[i])
+                    for i in range(len(cols))
+                }
+                rows.append(row_dict)
+            if fetchone:
+                return rows[0] if rows else None
+            if fetchall:
+                return rows
+            return True
+        else:
+            conn = sqlite3.connect(LOCAL_DB)
+            conn.row_factory = sqlite3.Row
+            c = conn.cursor()
+            c.execute(sql, params)
+            if fetchone:
+                row = c.fetchone()
+                conn.commit()
+                conn.close()
+                return dict(row) if row else None
+            if fetchall:
+                rows = [dict(r) for r in c.fetchall()]
+                conn.commit()
+                conn.close()
+                return rows
+            conn.commit()
+            conn.close()
+            return True
+
+
+db = DatabaseAdapter()
+
 
 def init_db():
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                telegram_id TEXT PRIMARY KEY,
-                username TEXT,
-                active_slot INTEGER DEFAULT 1
-            )
-        """)
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS characters (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                telegram_id TEXT,
-                slot_index INTEGER,
-                name TEXT,
-                realm_idx INTEGER DEFAULT 0,
-                realm_level INTEGER DEFAULT 1,
-                exp INTEGER DEFAULT 0,
-                exp_max INTEGER DEFAULT 100,
-                age INTEGER DEFAULT 1,
-                max_age INTEGER DEFAULT 100,
-                linh_thach INTEGER DEFAULT 300,
-                hammers INTEGER DEFAULT 0,
-                pity_boss INTEGER DEFAULT 0,
-                rebirth_count INTEGER DEFAULT 0,
-                free_points INTEGER DEFAULT 0,
-                is_dev BOOLEAN DEFAULT 0,
-                last_cultivate_time REAL DEFAULT 0,
-                stats_json TEXT,
-                roots_json TEXT,
-                destiny_json TEXT,
-                equipment_json TEXT,
-                inventory_json TEXT,
-                UNIQUE(telegram_id, slot_index)
-            )
-        """)
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS world_boss (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT,
-                max_hp INTEGER,
-                current_hp INTEGER,
-                attack INTEGER,
-                armor INTEGER,
-                dodge REAL,
-                counter REAL,
-                lifesteal REAL,
-                is_alive BOOLEAN DEFAULT 1,
-                created_at REAL
-            )
-        """)
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS boss_attacks (
-                boss_id INTEGER,
-                char_id INTEGER,
-                attack_count INTEGER DEFAULT 0,
-                PRIMARY KEY (boss_id, char_id)
-            )
-        """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS characters (
+            id TEXT PRIMARY KEY,
+            tg_id TEXT,
+            slot INTEGER,
+            name TEXT,
+            gender TEXT,
+            age INTEGER,
+            max_age INTEGER,
+            realm_idx INTEGER,
+            level INTEGER,
+            exp INTEGER,
+            stones INTEGER,
+            iron INTEGER,
+            hammers INTEGER,
+            pity_hammer INTEGER,
+            stamina INTEGER,
+            last_stamina_ts REAL,
+            last_cultivate_ts REAL,
+            last_active_ts REAL,
+            rebirth_count INTEGER,
+            potential_pts INTEGER,
+            can_allocate_base INTEGER,
+            ability_pts INTEGER,
+            breakthrough_bonus INTEGER,
+            base_stats TEXT,
+            ability_stats TEXT,
+            bone TEXT,
+            roots_inv TEXT,
+            roots_equipped TEXT,
+            titles TEXT,
+            equipped_title TEXT,
+            inventory TEXT,
+            equipped_items TEXT,
+            pills TEXT,
+            boss_attempts INTEGER,
+            boss_id_joined INTEGER
+        )
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS world_boss (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            max_hp INTEGER,
+            hp INTEGER,
+            atk INTEGER,
+            def_val INTEGER,
+            dodge INTEGER,
+            counter INTEGER,
+            lifesteal INTEGER,
+            element TEXT,
+            active INTEGER,
+            damage_board TEXT
+        )
+    """)
+    boss = db.execute(
+        "SELECT * FROM world_boss ORDER BY id DESC LIMIT 1", fetchone=True
+    )
+    if not boss:
+        db.execute(
+            """
+            INSERT INTO world_boss (name, max_hp, hp, atk, def_val, dodge, counter, lifesteal, element, active, damage_board)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+            (
+                "Thượng Cổ Huyết Ma Viên",
+                500000,
+                500000,
+                850,
+                200,
+                15,
+                15,
+                10,
+                "Hỏa",
+                1,
+                "{}",
+            ),
+        )
+
 
 init_db()
 
-# --- HỆ THỐNG CẢNH GIỚI VÀ THỌ NGUYÊN ---
-REALM_NAMES = [
-    "Phàm Nhân", "Luyện Khí", "Trúc Cơ", "Kim Đan", "Nguyên Anh",
-    "Hóa Thần", "Luyện Hư", "Hợp Thể", "Đại Thừa", "Độ Kiếp", "Chân Tiên Cảnh"
+# ==========================================
+# 2. HẰNG SỐ VÀ CƠ SỞ DỮ LIỆU GAME
+# ==========================================
+REALMS = [
+    {"name": "Phàm Nhân", "max_age": 100, "base_exp": 100, "hp_mult": 1.0},
+    {"name": "Luyện Khí Kỳ", "max_age": 150, "base_exp": 250, "hp_mult": 1.4},
+    {"name": "Trúc Cơ Kỳ", "max_age": 250, "base_exp": 600, "hp_mult": 2.0},
+    {"name": "Kim Đan Kỳ", "max_age": 500, "base_exp": 1500, "hp_mult": 3.2},
+    {"name": "Nguyên Anh Kỳ", "max_age": 1000, "base_exp": 3500, "hp_mult": 5.0},
+    {"name": "Hóa Thần Kỳ", "max_age": 2000, "base_exp": 8000, "hp_mult": 8.0},
+    {
+        "name": "Luyện Hư Kỳ",
+        "max_age": 4000,
+        "base_exp": 18000,
+        "hp_mult": 13.0,
+    },
+    {"name": "Hợp Thể Kỳ", "max_age": 8000, "base_exp": 40000, "hp_mult": 21.0},
+    {
+        "name": "Đại Thừa Kỳ",
+        "max_age": 15000,
+        "base_exp": 90000,
+        "hp_mult": 35.0,
+    },
+    {
+        "name": "Độ Kiếp Chân Tiên",
+        "max_age": 99999,
+        "base_exp": 250000,
+        "hp_mult": 60.0,
+    },
 ]
-REALM_LIFESPANS = [100, 150, 250, 500, 1000, 2000, 4000, 8000, 15000, 30000, 999999]
 
+BONES = [
+    {
+        "id": "pham_cot",
+        "name": "Phàm Cốt",
+        "rank": "D",
+        "desc": "Thể chất bình thường của phàm nhân.",
+        "hp_pct": 0,
+        "atk_pct": 0,
+        "immortal": False,
+    },
+    {
+        "id": "linh_cot",
+        "name": "Thanh Linh Đạo Cốt",
+        "rank": "B",
+        "desc": "Kinh mạch thông suốt, tăng 15% Máu và 10% Công.",
+        "hp_pct": 15,
+        "atk_pct": 10,
+        "immortal": False,
+    },
+    {
+        "id": "ba_cot",
+        "name": "Hoang Cổ Bá Thể",
+        "rank": "A",
+        "desc": "Nhục thân vô song, tăng 30% Máu và 20% Công.",
+        "hp_pct": 30,
+        "atk_pct": 20,
+        "immortal": False,
+    },
+    {
+        "id": "tien_cot",
+        "name": "Tiên Thiên Đạo Thể",
+        "rank": "S",
+        "desc": "Con cưng của trời đất, tăng 50% Máu, 35% Công.",
+        "hp_pct": 50,
+        "atk_pct": 35,
+        "immortal": False,
+    },
+    {
+        "id": "ma_cot",
+        "name": "Thượng Cổ Ma Thần Thể",
+        "rank": "SS",
+        "desc": "Sát phạt quyết đoán, tăng 40% Máu, 60% Công.",
+        "hp_pct": 40,
+        "atk_pct": 60,
+        "immortal": False,
+    },
+    {
+        "id": "vinh_sinh",
+        "name": "Vĩnh Sinh Bất Diệt Thể",
+        "rank": "SSS",
+        "desc": (
+            "Thọ nguyên VÔ HẠN (∞), không bao giờ chết già, +60% Máu, +40%"
+            " Công."
+        ),
+        "hp_pct": 60,
+        "atk_pct": 40,
+        "immortal": True,
+    },
+]
+
+ROOTS_POOL = [
+    {
+        "id": "tap_linh",
+        "name": "Ngũ Hành Tạp Linh Căn",
+        "rank": "D",
+        "element": "Thổ",
+        "atk": 10,
+        "hp": 50,
+        "crit": 1,
+        "desc": "Linh căn tạp chất, tăng 10 Công, 50 HP, 1% Bạo.",
+    },
+    {
+        "id": "hoa_linh",
+        "name": "Liệt Hỏa Linh Căn",
+        "rank": "C",
+        "element": "Hỏa",
+        "atk": 35,
+        "hp": 100,
+        "crit": 3,
+        "desc": "Hệ Hỏa (Khắc Kim), +35 Công, +100 HP, +3% Bạo.",
+    },
+    {
+        "id": "thuy_linh",
+        "name": "Huyền Thủy Linh Căn",
+        "rank": "C",
+        "element": "Thủy",
+        "atk": 25,
+        "hp": 220,
+        "crit": 2,
+        "desc": "Hệ Thủy (Khắc Hỏa), +25 Công, +220 HP, +2% Bạo.",
+    },
+    {
+        "id": "moc_linh",
+        "name": "Thanh Mộc Linh Căn",
+        "rank": "B",
+        "element": "Mộc",
+        "atk": 45,
+        "hp": 380,
+        "crit": 3,
+        "desc": "Hệ Mộc (Khắc Thổ), +45 Công, +380 HP, +3% Bạo.",
+    },
+    {
+        "id": "kim_linh",
+        "name": "Canh Kim Kiếm Căn",
+        "rank": "B",
+        "element": "Kim",
+        "atk": 80,
+        "hp": 180,
+        "crit": 6,
+        "desc": "Hệ Kim (Khắc Mộc), +80 Công, +180 HP, +6% Bạo.",
+    },
+    {
+        "id": "tho_linh",
+        "name": "Hậu Thổ Hoàng Căn",
+        "rank": "A",
+        "element": "Thổ",
+        "atk": 70,
+        "hp": 600,
+        "crit": 4,
+        "desc": "Hệ Thổ (Khắc Thủy), +70 Công, +600 HP, +4% Bạo.",
+    },
+    {
+        "id": "phong_linh",
+        "name": "Cuồng Phong Dị Linh Căn",
+        "rank": "A",
+        "element": "Phong",
+        "atk": 120,
+        "hp": 350,
+        "crit": 12,
+        "desc": "Biến dị Phong (Không bị khắc), +120 Công, +350 HP, +12% Bạo.",
+    },
+    {
+        "id": "bang_linh",
+        "name": "Hàn Băng Thiên Linh Căn",
+        "rank": "S",
+        "element": "Băng",
+        "atk": 180,
+        "hp": 800,
+        "crit": 10,
+        "desc": "Biến dị Băng (Giảm tốc địch), +180 Công, +800 HP, +10% Bạo.",
+    },
+    {
+        "id": "loi_linh",
+        "name": "Cửu Thiên Lôi Linh Căn",
+        "rank": "SS",
+        "element": "Lôi",
+        "atk": 300,
+        "hp": 1000,
+        "crit": 18,
+        "desc": "Biến dị Lôi (Tê liệt mục tiêu), +300 Công, +1000 HP, +18% Bạo.",
+    },
+    {
+        "id": "hon_don",
+        "name": "Hỗn Độn Hồng Mông Căn",
+        "rank": "SSS",
+        "element": "Hỗn Độn",
+        "atk": 550,
+        "hp": 2500,
+        "crit": 25,
+        "desc": (
+            "Chí tôn vạn giới (Áp chế mọi hệ), +550 Công, +2500 HP, +25% Bạo."
+        ),
+    },
+]
+
+TITLES_INFO = {
+    "Tân Thủ Tu Tiên": {
+        "desc": "Danh hiệu khởi đầu của người bước vào tiên giới.",
+        "dodge": 0,
+        "atk_pct": 0,
+        "bypass_dodge_cap": False,
+    },
+    "Vây Hạ Đại Boss": {
+        "desc": (
+            "Top 10 Sát Thương Boss Thế Giới: +10% Né Tránh (Được phép vượt"
+            " trần giới hạn né tránh 75% lên 85%)."
+        ),
+        "dodge": 10,
+        "atk_pct": 5,
+        "bypass_dodge_cap": True,
+    },
+    "Luân Hồi Giả": {
+        "desc": (
+            "Đã trải qua Niết Bàn Trùng Sinh trên 500 tuổi: +10% Sát thương."
+        ),
+        "dodge": 2,
+        "atk_pct": 10,
+        "bypass_dodge_cap": False,
+    },
+}
+
+# Ngũ hành tương khắc: Kim -> Mộc -> Thổ -> Thủy -> Hỏa -> Kim
+ELEMENT_COUNTER = {
+    "Kim": "Mộc",
+    "Mộc": "Thổ",
+    "Thổ": "Thủy",
+    "Thủy": "Hỏa",
+    "Hỏa": "Kim",
+}
+
+# 15 Vật phẩm trong Vạn Bảo Các (Tuyệt đối không bán Nhẫn Quỷ)
+SHOP_ITEMS = [
+    {
+        "id": "tay_tuy_dich",
+        "name": "Tẩy Tủy Dịch (Gacha Linh Căn)",
+        "type": "gacha",
+        "price": 1000,
+        "desc": (
+            "Quay ngẫu nhiên 1 Linh Căn vào Kho. Trùng lặp mất 1.000 LT không"
+            " hoàn trả."
+        ),
+    },
+    {
+        "id": "than_chuy",
+        "name": "Thiên Công Thần Chùy",
+        "type": "hammer",
+        "price": 2000,
+        "desc": "Búa thần dùng để cường hóa trang bị lên tối đa +20.",
+    },
+    {
+        "id": "tho_menh_dan",
+        "name": "Thọ Mệnh Đan",
+        "type": "pill_age",
+        "price": 1500,
+        "desc": "Tăng trực tiếp +50 năm Thọ Nguyên tối đa.",
+    },
+    {
+        "id": "truc_co_dan",
+        "name": "Trúc Cơ Đan",
+        "type": "pill_break",
+        "price": 600,
+        "desc": "Tăng +10% tỉ lệ Đột Phá Bình Cảnh (Từ 80% lên 90%).",
+    },
+    {
+        "id": "ket_dan_dan",
+        "name": "Kết Đan Linh Đan",
+        "type": "pill_break",
+        "price": 1200,
+        "desc": "Đan dược thượng phẩm giúp +10% tỉ lệ Đột Phá Bình Cảnh.",
+    },
+    {
+        "id": "hoi_linh_dan",
+        "name": "Cửu Chuyển Hồi Linh Đan",
+        "type": "pill_mp",
+        "price": 400,
+        "desc": "Tăng vĩnh viễn +2 điểm Năng Lực Linh Lực (+20 MP).",
+    },
+    {
+        "id": "hoi_xuan_dan",
+        "name": "Hồi Xuân Chân Đan",
+        "type": "pill_hp",
+        "price": 800,
+        "desc": "Tăng vĩnh viễn +5 điểm Năng Lực Máu (+25 HP).",
+    },
+    {
+        "id": "vk_thanh_van",
+        "name": "Thanh Vân Tiên Kiếm",
+        "type": "equip",
+        "slot": "weapon",
+        "rank": "A",
+        "price": 1200,
+        "atk": 120,
+        "hp": 100,
+        "crit": 5,
+        "dodge": 0,
+        "lifesteal": 0,
+        "dmg_red": 0,
+        "desc": "Kiếm sắc bén của Thanh Vân Môn (+120 Công, +5% Bạo).",
+    },
+    {
+        "id": "ao_huyen_vu",
+        "name": "Huyền Vũ Hộ Tâm Giáp",
+        "type": "equip",
+        "slot": "armor",
+        "rank": "A",
+        "price": 1500,
+        "atk": 20,
+        "hp": 850,
+        "crit": 0,
+        "dodge": 2,
+        "lifesteal": 0,
+        "dmg_red": 4,
+        "desc": "Giáp mai rùa Huyền Vũ (+850 HP, +4% Giảm ST).",
+    },
+    {
+        "id": "mu_tu_van",
+        "name": "Tử Vân Đạo Quán",
+        "type": "equip",
+        "slot": "helm",
+        "rank": "B",
+        "price": 1100,
+        "atk": 35,
+        "hp": 450,
+        "crit": 2,
+        "dodge": 2,
+        "lifesteal": 0,
+        "dmg_red": 2,
+        "desc": "Mũ đạo sĩ Tử Vân (+450 HP, +35 Công).",
+    },
+    {
+        "id": "quan_that_tinh",
+        "name": "Thất Tinh Pháp Quần",
+        "type": "equip",
+        "slot": "pants",
+        "rank": "B",
+        "price": 1100,
+        "atk": 30,
+        "hp": 520,
+        "crit": 0,
+        "dodge": 4,
+        "lifesteal": 0,
+        "dmg_red": 2,
+        "desc": "Quần thêu chòm sao Bắc Đẩu (+520 HP, +4% Né).",
+    },
+    {
+        "id": "giay_thanh_phong",
+        "name": "Thanh Phong Tiên Hài",
+        "type": "equip",
+        "slot": "boots",
+        "rank": "B",
+        "price": 1000,
+        "atk": 40,
+        "hp": 300,
+        "crit": 2,
+        "dodge": 7,
+        "lifesteal": 0,
+        "dmg_red": 0,
+        "desc": "Giày đạp gió (+7% Né tránh, +40 Công).",
+    },
+    {
+        "id": "nhan_luu_ly",
+        "name": "Lưu Ly Giới Chỉ",
+        "type": "equip",
+        "slot": "ring",
+        "rank": "A",
+        "price": 1800,
+        "atk": 95,
+        "hp": 300,
+        "crit": 6,
+        "dodge": 2,
+        "lifesteal": 2,
+        "dmg_red": 0,
+        "desc": "Nhẫn ngọc lưu ly (+95 Công, +6% Bạo, +2% Hút máu).",
+    },
+    {
+        "id": "nhan_u_hon",
+        "name": "U Hồn Linh Nhẫn",
+        "type": "equip",
+        "slot": "ring",
+        "rank": "A",
+        "price": 1800,
+        "atk": 110,
+        "hp": 200,
+        "crit": 4,
+        "dodge": 0,
+        "lifesteal": 6,
+        "dmg_red": 0,
+        "desc": "Nhẫn u hồn (+110 Công, +6% Hút máu).",
+    },
+    {
+        "id": "nhan_thien_diep",
+        "name": "Thiên Diệp Bảo Giới",
+        "type": "equip",
+        "slot": "ring",
+        "rank": "A",
+        "price": 1800,
+        "atk": 60,
+        "hp": 650,
+        "crit": 2,
+        "dodge": 4,
+        "lifesteal": 0,
+        "dmg_red": 4,
+        "desc": "Nhẫn ngàn lá (+650 HP, +4% Né, +4% Giảm ST).",
+    },
+]
+
+# Bảo vật độc quyền Boss Thế Giới
+GHOST_RING_TEMPLATE = {
+    "uid": "nhan_quy_special",
+    "id": "nhan_quy",
+    "name": "Nhẫn Quỷ (Thần Khí Boss)",
+    "slot": "ring",
+    "rank": "SSS",
+    "level": 0,
+    "atk": 250,
+    "hp": 1000,
+    "crit": 10,
+    "dodge": 5,
+    "lifesteal": 20,
+    "dmg_red": 20,
+    "desc": (
+        "Chiến lợi phẩm Top 50 Boss Thế Giới: +10% Bạo kích, +20% Hút máu, +20%"
+        " Giảm sát thương!"
+    ),
+}
+
+# Mẫu trang bị rơi ở Thượng Cổ Động Phủ
+DONG_PHU_DROPS = [
+    {
+        "id": "dp_kiem_1",
+        "name": "Gỉ Sét Thiết Kiếm",
+        "slot": "weapon",
+        "rank": "D",
+        "atk": 25,
+        "hp": 30,
+        "crit": 1,
+        "dodge": 0,
+        "lifesteal": 0,
+        "dmg_red": 0,
+    },
+    {
+        "id": "dp_ao_1",
+        "name": "Áo Vải Thô Sơ",
+        "slot": "armor",
+        "rank": "D",
+        "atk": 5,
+        "hp": 120,
+        "crit": 0,
+        "dodge": 1,
+        "lifesteal": 0,
+        "dmg_red": 1,
+    },
+    {
+        "id": "dp_mu_1",
+        "name": "Khăn Đầu Thanh Y",
+        "slot": "helm",
+        "rank": "C",
+        "atk": 15,
+        "hp": 200,
+        "crit": 1,
+        "dodge": 1,
+        "lifesteal": 0,
+        "dmg_red": 1,
+    },
+    {
+        "id": "dp_giay_1",
+        "name": "Giày Cỏ Tốc Hành",
+        "slot": "boots",
+        "rank": "C",
+        "atk": 15,
+        "hp": 150,
+        "crit": 1,
+        "dodge": 3,
+        "lifesteal": 0,
+        "dmg_red": 0,
+    },
+    {
+        "id": "dp_quan_1",
+        "name": "Hắc Thiết Hộ Quần",
+        "slot": "pants",
+        "rank": "B",
+        "atk": 30,
+        "hp": 420,
+        "crit": 1,
+        "dodge": 2,
+        "lifesteal": 0,
+        "dmg_red": 2,
+    },
+    {
+        "id": "dp_kiem_2",
+        "name": "Thanh Trúc Phong Vân Kiếm",
+        "slot": "weapon",
+        "rank": "S",
+        "atk": 220,
+        "hp": 300,
+        "crit": 9,
+        "dodge": 3,
+        "lifesteal": 4,
+        "dmg_red": 0,
+    },
+    {
+        "id": "dp_nhan_2",
+        "name": "Thượng Cổ Huyết Ngọc Giới",
+        "slot": "ring",
+        "rank": "S",
+        "atk": 160,
+        "hp": 500,
+        "crit": 8,
+        "dodge": 3,
+        "lifesteal": 8,
+        "dmg_red": 5,
+    },
+]
+
+
+# ==========================================
+# 3. HÀM TÍNH CHỈ SỐ & TIỆN ÍCH NHÂN VẬT
+# ==========================================
 def get_sub_stage(level: int) -> str:
-    if level <= 3: return "Sơ Kỳ"
-    if level <= 6: return "Trung Kỳ"
-    if level <= 9: return "Hậu Kỳ"
+    if level <= 3:
+        return "Sơ Kỳ"
+    if level <= 6:
+        return "Trung Kỳ"
+    if level <= 9:
+        return "Hậu Kỳ"
     return "Viên Mãn"
 
-def get_full_realm_title(realm_idx: int, level: int) -> str:
-    base = REALM_NAMES[min(realm_idx, len(REALM_NAMES)-1)]
-    if realm_idx == 0:
-        return f"{base} (Cấp {level})"
-    stage = get_sub_stage(level)
-    return f"{base} {stage} (Cấp {level})"
 
-ROOT_DATABASE = {
-    "D": [
-        {"name": "Bính Hỏa Linh Căn", "tier": "D", "desc": "Tăng 5% sát thương hỏa"},
-        {"name": "Ất Mộc Linh Căn", "tier": "D", "desc": "Tăng 5% hồi phục khí huyết"},
-        {"name": "Huyền Thủy Linh Căn", "tier": "D", "desc": "Tăng 5% né tránh"},
-        {"name": "Canh Kim Linh Căn", "tier": "D", "desc": "Tăng 5% phòng ngự"},
-        {"name": "Mậu Thổ Linh Căn", "tier": "D", "desc": "Tăng 5% lượng máu tối đa"}
-    ],
-    "C": [
-        {"name": "Tử Lôi Biến Dị", "tier": "C", "desc": "Kích hoạt 4% gây choáng"},
-        {"name": "Huyền Băng Dị Căn", "tier": "C", "desc": "Hàn khí thấu cốt, giảm tốc đối phương"},
-        {"name": "Cương Phong Dị Thể", "tier": "C", "desc": "Tăng 8% Thân pháp tốc độ"}
-    ],
-    "B": [
-        {"name": "Viêm Lôi Hợp Thể", "tier": "B", "desc": "Lôi hỏa giao hòa, tăng 10% bạo kích"},
-        {"name": "Băng Phách Huyền Thủy", "tier": "B", "desc": "Đóng băng vạn vật, tăng 8% né tránh"}
-    ],
-    "A": [
-        {"name": "Thái Cực Âm Dương Căn", "tier": "A", "desc": "Hóa giải sát thương, phản 8% đòn đánh"},
-        {"name": "Hỗn Nguyên Kim Cương Căn", "tier": "A", "desc": "Thân thể bất hoại, tăng 15% giáp"}
-    ],
-    "S": [
-        {"name": "Tử Tiêu Thần Lôi Căn", "tier": "S", "desc": "Lôi kiếp tối thượng, 15% bỏ qua giáp"},
-        {"name": "Đại Nhật Kim Ô Căn", "tier": "S", "desc": "Chân hỏa thái dương, thiêu đốt nguyên thần"}
-    ],
-    "SS": [
-        {"name": "Hỗn Độn Diệt Thế Lôi", "tier": "SS", "desc": "Tăng 25% sát thương bạo kích"},
-        {"name": "Thời Không Chi Dực", "tier": "SS", "desc": "Tăng 18% Né tránh và Tiên thủ đoạt chiêu"}
-    ],
-    "SSS": [
-        {"name": "Tam Muội Chân Hỏa", "tier": "SSS", "desc": "Ngũ Đại Đỉnh Cao: Thiêu rụi toàn bộ giáp hộ thể"},
-        {"name": "Canh Kim Bạch Hổ", "tier": "SSS", "desc": "Ngũ Đại Đỉnh Cao: Sát phạt tuyệt đối, +30% Bạo kích"},
-        {"name": "Ất Mộc Trường Sinh", "tier": "SSS", "desc": "Ngũ Đại Đỉnh Cao: Trường sinh bất tử, +35% Hút máu"},
-        {"name": "Thiên Nhất Chân Thủy", "tier": "SSS", "desc": "Ngũ Đại Đỉnh Cao: Hóa giải vạn pháp, +25% Né tránh"},
-        {"name": "Huyền Hoàng Tức Nhưỡng", "tier": "SSS", "desc": "Ngũ Đại Đỉnh Cao: Thổ thần vô địch, +300 điểm Giáp"}
-    ]
-}
+def parse_char(row: dict) -> dict:
+    if not row:
+        return None
+    now = time.time()
+    # 1. Cập nhật hồi phục Thể Lực (1 điểm / 60 giây, tối đa 50)
+    last_stam = row["last_stamina_ts"] or now
+    elapsed_min = int((now - last_stam) // 60)
+    cur_stam = row["stamina"]
+    if elapsed_min > 0 and cur_stam < 50:
+        cur_stam = min(50, cur_stam + elapsed_min)
+        last_stam = now
+        db.execute(
+            "UPDATE characters SET stamina=?, last_stamina_ts=? WHERE id=?",
+            (cur_stam, last_stam, row["id"]),
+        )
+    elif cur_stam >= 50:
+        last_stam = now
 
-DESTINY_DATABASE = [
-    {"name": "Khí Vận Chi Tử", "type": "Thiên Mệnh", "desc": "Nhân vật chính hào quang, tăng gấp đôi tỉ lệ rơi bảo vật"},
-    {"name": "Chí Tôn Cốt", "type": "Dị Cốt", "desc": "Trời sinh thần cốt, tăng 15% Sức mạnh và Bạo kích"},
-    {"name": "Trùng Đồng Chi Nhãn", "type": "Dị Cốt", "desc": "Nhìn thấu sơ hở, tăng 15% Né tránh"},
-    {"name": "Bất Diệt Chân Huyết", "type": "Dị Cốt", "desc": "Khí huyết vô tận, tăng 25% Máu tối đa"},
-    {"name": "Hàn Băng Thần Thể", "type": "Dị Cốt", "desc": "Thân thể băng sương, tăng 15% Giáp và phản kích"}
-]
+    base_stats = json.loads(row["base_stats"])
+    ability_stats = json.loads(row["ability_stats"])
+    bone = json.loads(row["bone"])
+    roots_inv = json.loads(row["roots_inv"])
+    roots_equipped = json.loads(row["roots_equipped"])
+    titles = json.loads(row["titles"])
+    inventory = json.loads(row["inventory"])
+    equipped_items = json.loads(row["equipped_items"])
+    pills = json.loads(row["pills"])
 
-DEFAULT_EQUIPMENT = {
-    "vk1": None, "vk2": None, "mu": None, "ao": None,
-    "quan": None, "giay": None, "nhan1": None, "nhan2": None, "nhan3": None
-}
+    # 2. Tính tổng chỉ số chiến đấu
+    realm_info = REALMS[min(row["realm_idx"], len(REALMS) - 1)]
+    mult = realm_info["hp_mult"]
 
-ARMOR_CONSTANT = 600.0
+    # Từ 5 thuộc tính gốc (Linh Lực, Thể Chất, Tốc Độ, Khí Vận, Ngộ Tính)
+    hp = int((150 + base_stats["the_chat"] * 25) * mult)
+    mp = int((100 + base_stats["linh_luc"] * 20) * mult)
+    atk = int((25 + base_stats["linh_luc"] * 6) * mult)
+    crit = round(base_stats["khi_van"] * 0.25, 1)
+    dodge = round(base_stats["toc_do"] * 0.3, 1)
+    dmg_red = 0.0
+    lifesteal = 0.0
+    hp_regen = 0
 
-def calculate_total_stats(base_stats: dict, eq: dict) -> dict:
-    total = {
-        "hp": 100 + int(base_stats.get("the_chat", 0) * 30 * (1.0 + 0.09 * base_stats.get("the_chat", 0))),
-        "mp": 1000 + int(base_stats.get("linh_luc", 0) * 20),
-        "suc_manh": 50 + int(base_stats.get("linh_luc", 0) * 5 * (1.0 + 0.09 * base_stats.get("linh_luc", 0))),
-        "toc_do": 50 + int(base_stats.get("toc_do", 0) * 4),
-        "thu": 20 + int(base_stats.get("the_chat", 0) * 3),
-        "ne_tranh": min(50.0, float(base_stats.get("toc_do", 0) * 0.5)),
-        "bao_kich": 5.0,
-        "lien_kich": 5.0,
-        "phan_kich": 5.0,
-        "choang": 0.0,
-        "hut_mau": 0.0,
-        "khi_van": base_stats.get("khi_van", 0),
-        "ngo_tinh": base_stats.get("ngo_tinh", 0)
+    # Từ bảng Năng Lực hàng năm (+5 HP, +5 Công, +10 MP, +0.1% Giảm ST max 15%, +5 Hồi máu/lượt)
+    hp += ability_stats.get("hp", 1) * 5
+    atk += ability_stats.get("atk", 1) * 5
+    mp += ability_stats.get("mp", 1) * 10
+    ability_dmg_red = min(15.0, round(ability_stats.get("dmg_red", 1) * 0.1, 1))
+    dmg_red += ability_dmg_red
+    hp_regen += ability_stats.get("regen", 1) * 5
+
+    # Từ Linh Căn Xuất Trận (Tối đa 7 ô)
+    active_elements = []
+    for r_id in roots_equipped[:7]:
+        r_obj = next((x for x in roots_inv if x["id"] == r_id), None)
+        if r_obj:
+            hp += r_obj.get("hp", 0)
+            atk += r_obj.get("atk", 0)
+            crit += r_obj.get("crit", 0)
+            active_elements.append(r_obj.get("element", "Thổ"))
+
+    # Từ Trang Bị Đang Mặc (Đã tính cường hóa +1 -> +20)
+    for slot_k, item in equipped_items.items():
+        if item:
+            lv = item.get("level", 0)
+            enh_mult = 1.0 + (lv * 0.08)  # Mỗi cấp +8% chỉ số gốc
+            hp += int(item.get("hp", 0) * enh_mult)
+            atk += int(item.get("atk", 0) * enh_mult)
+            crit += item.get("crit", 0)
+            dodge += item.get("dodge", 0)
+            lifesteal += item.get("lifesteal", 0)
+            dmg_red += item.get("dmg_red", 0)
+            if lv >= 20:
+                lifesteal += 5  # Dòng ẩn thần khí +20: +5% Hút máu
+                crit += 5
+
+    # Từ Dị Cốt / Thiên Mệnh
+    hp = int(hp * (1 + bone.get("hp_pct", 0) / 100.0))
+    atk = int(atk * (1 + bone.get("atk_pct", 0) / 100.0))
+
+    # Từ Danh Hiệu Đặc Biệt
+    eq_title = row["equipped_title"]
+    t_info = TITLES_INFO.get(eq_title, TITLES_INFO["Tân Thủ Tu Tiên"])
+    atk = int(atk * (1 + t_info.get("atk_pct", 0) / 100.0))
+    dodge += t_info.get("dodge", 0)
+
+    # Trần Né Tránh: Mặc định 75%, nếu đeo "Vây Hạ Đại Boss" được phép vượt trần lên 85%
+    dodge_cap = 85.0 if t_info.get("bypass_dodge_cap") else 75.0
+    dodge = min(dodge_cap, round(dodge, 1))
+    dmg_red = min(75.0, round(dmg_red, 1))
+    crit = min(100.0, round(crit, 1))
+
+    exp_req = int(realm_info["base_exp"] * (row["level"] ** 1.35))
+
+    return {
+        "id": row["id"],
+        "tg_id": row["tg_id"],
+        "slot": row["slot"],
+        "name": row["name"],
+        "gender": row["gender"],
+        "age": row["age"],
+        "max_age": 999999 if bone.get("immortal") else row["max_age"],
+        "immortal": bone.get("immortal", False),
+        "realm_idx": row["realm_idx"],
+        "realm_name": f"{realm_info['name']} - {get_sub_stage(row['level'])}",
+        "level": row["level"],
+        "exp": row["exp"],
+        "exp_req": exp_req,
+        "at_bottleneck": row["level"] >= 10 and row["exp"] >= exp_req,
+        "stones": row["stones"],
+        "iron": row["iron"],
+        "hammers": row["hammers"],
+        "pity_hammer": row["pity_hammer"],
+        "stamina": cur_stam,
+        "next_stamina_sec": max(0, 60 - int((now - last_stam) % 60)),
+        "rebirth_count": row["rebirth_count"],
+        "potential_pts": row["potential_pts"],
+        "can_allocate_base": bool(row["can_allocate_base"]),
+        "ability_pts": row["ability_pts"],
+        "breakthrough_bonus": row["breakthrough_bonus"],
+        "base_stats": base_stats,
+        "ability_stats": ability_stats,
+        "bone": bone,
+        "roots_inv": roots_inv,
+        "roots_equipped": roots_equipped,
+        "active_elements": active_elements,
+        "titles": titles,
+        "equipped_title": eq_title,
+        "titles_catalog": TITLES_INFO,
+        "inventory": inventory,
+        "equipped_items": equipped_items,
+        "pills": pills,
+        "combat_stats": {
+            "hp": hp,
+            "mp": mp,
+            "atk": atk,
+            "crit": crit,
+            "dodge": dodge,
+            "dodge_cap": dodge_cap,
+            "dmg_red": dmg_red,
+            "ability_dmg_red": ability_dmg_red,
+            "lifesteal": round(lifesteal, 1),
+            "hp_regen": hp_regen,
+            "power": int(hp * 0.5 + atk * 4 + (crit + dodge + dmg_red) * 30),
+        },
     }
 
-    for slot, item in eq.items():
-        if item:
-            mult = 1.0 + (item.get("enhance", 0) * 0.1)
-            for k, v in item.get("stats", {}).items():
-                if k in ["ne_tranh", "bao_kich", "lien_kich", "phan_kich", "choang", "hut_mau"]:
-                    total[k] = min(70.0 if k == "ne_tranh" else 40.0, total.get(k, 0.0) + (v * mult))
-                else:
-                    total[k] = total.get(k, 0) + math.floor(v * mult)
-    return total
 
-class Fighter:
-    def __init__(self, name: str, stats: dict):
-        self.name = name
-        self.max_hp = stats.get("hp", 100)
-        self.current_hp = self.max_hp
-        self.strength = stats.get("suc_manh", 50)
-        self.speed = stats.get("toc_do", 50)
-        self.armor = stats.get("thu", 0)
-        self.dodge = min(60.0, float(stats.get("ne_tranh", 0.0)))
-        self.lifesteal = min(50.0, float(stats.get("hut_mau", 0.0)))
-        self.crit = min(50.0, float(stats.get("bao_kich", 0.0)))
-        self.combo = min(40.0, float(stats.get("lien_kich", 0.0)))
-        self.counter = min(40.0, float(stats.get("phan_kich", 0.0)))
-        self.stun = min(30.0, float(stats.get("choang", 0.0)))
-        self.is_stunned = False
-
-    def get_mitigation(self) -> float:
-        if self.armor <= 0: return 0.0
-        return self.armor / (self.armor + ARMOR_CONSTANT)
-
-def simulate_battle(f1: Fighter, f2: Fighter, max_turns: int = 30):
-    logs = []
-    atk, df = (f1, f2) if f1.speed >= f2.speed else (f2, f1)
-    logs.append(f"⚡ Khởi tranh! {atk.name} (Tốc {atk.speed}) đoạt TIÊN THỦ trước {df.name} (Tốc {df.speed}).")
-
-    turn = 0
-    while turn < max_turns and f1.current_hp > 0 and f2.current_hp > 0:
-        turn += 1
-        if atk.is_stunned:
-            logs.append(f"💫 [Hiệp {turn}] {atk.name} bị CHOÁNG, mất lượt thi triển!")
-            atk.is_stunned = False
-        else:
-            execute_strike(atk, df, logs, turn, is_counter=False)
-            if df.current_hp > 0 and random.uniform(0, 100) <= atk.combo:
-                logs.append(f"⚡ [Hiệp {turn} - Liên Kích] {atk.name} áp sát tung thêm đòn liên kích!")
-                execute_strike(atk, df, logs, turn, is_counter=False)
-
-        if df.current_hp <= 0: break
-        atk, df = df, atk
-
-    winner = f1 if f1.current_hp > 0 and (f2.current_hp <= 0 or (f1.current_hp/f1.max_hp >= f2.current_hp/f2.max_hp)) else f2
-    loser = f2 if winner == f1 else f1
-    logs.append(f"🏆 KẾT THÚC! {winner.name} đã đả bại {loser.name}!")
-    return {"winner_name": winner.name, "total_turns": turn, "logs": logs, "damage_dealt_to_f2": f2.max_hp - max(0, f2.current_hp)}
-
-def execute_strike(atk: Fighter, df: Fighter, logs: list, turn: int, is_counter: bool = False):
-    if random.uniform(0, 100) <= df.dodge:
-        logs.append(f"💨 [Hiệp {turn}] {df.name} NÉ ĐÒN xuất sắc của {atk.name}!")
-        if not is_counter and random.uniform(0, 100) <= (df.counter / 2.0):
-            logs.append(f"⚡ [Hiệp {turn} - Né Phản] {df.name} mượn thế phản kích!")
-            execute_strike(df, atk, logs, turn, is_counter=True)
-        return
-
-    is_crit = random.uniform(0, 100) <= atk.crit
-    raw_dmg = atk.strength * (2 if is_crit else 1)
-    mitigation = df.get_mitigation()
-    actual_dmg = max(1, math.floor(raw_dmg * (1.0 - mitigation)))
-    df.current_hp = max(0, df.current_hp - actual_dmg)
-
-    crit_tag = "💥 BẠO KÍCH! " if is_crit else ""
-    counter_tag = "[Phản Kích] " if is_counter else ""
-    logs.append(f"⚔️ [Hiệp {turn}] {counter_tag}{atk.name} đánh trúng {crit_tag}gây {actual_dmg} ST. {df.name} còn {df.current_hp}/{df.max_hp} HP.")
-
-    if atk.lifesteal > 0 and actual_dmg > 0:
-        healed = max(1, math.floor(actual_dmg * (atk.lifesteal / 100.0)))
-        atk.current_hp = min(atk.max_hp, atk.current_hp + healed)
-        logs.append(f"🩸 {atk.name} hút {healed} HP.")
-
-    if df.current_hp <= 0: return
-
-    if random.uniform(0, 100) <= atk.stun:
-        df.is_stunned = True
-        logs.append(f"💫 {df.name} trúng đòn rơi vào trạng thái CHOÁNG!")
-        return
-
-    if not is_counter and random.uniform(0, 100) <= df.counter:
-        logs.append(f"🛡️ [Hiệp {turn} - Phản Pháo] {df.name} phản đòn chớp nhoáng!")
-        execute_strike(df, atk, logs, turn, is_counter=True)
-
-# --- MODELS REQUEST ---
-class RollCharacterRequest(BaseModel):
-    telegram_id: str
-    username: Optional[str] = "Đạo Hữu"
-    slot_index: int
+# ==========================================
+# 4. API ENDPOINTS
+# ==========================================
+class CreateCharReq(BaseModel):
+    tg_id: str
+    slot: int
     name: str
-    allocated_points: dict
-    admin_password: Optional[str] = None
+    gender: str
+    base_stats: dict
 
-class ActionRequest(BaseModel):
-    char_id: int
 
-class EnhanceRequest(BaseModel):
-    char_id: int
-    slot_key: str
+class ActionReq(BaseModel):
+    char_id: str
+    extra: Optional[dict] = {}
 
-class SellRequest(BaseModel):
-    char_id: int
-    inv_index: int
 
-class BuyRequest(BaseModel):
-    char_id: int
-    item_id: str
-
-class ChallengeRequest(BaseModel):
-    challenger_char_id: int
-    target_char_id: int
-
-class DeleteCharRequest(BaseModel):
-    telegram_id: str
-    slot_index: int
-    confirm_name: str
-
-class AddStatPointRequest(BaseModel):
-    char_id: int
-    stat_key: str
-
-class SpawnBossRequest(BaseModel):
-    admin_password: str
+class DevBossReq(BaseModel):
+    secret: str
     name: str
     hp: int
-    attack: int
-    armor: int
-    dodge: float
-    counter: float
-    lifesteal: float
+    atk: int
+    def_val: int
+    dodge: int
+    counter: int
+    lifesteal: int
+    element: str
 
-# --- API ENDPOINTS ---
 
-@app.get("/api/slots/{telegram_id}")
-def get_slots(telegram_id: str):
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("""
-            SELECT id, slot_index, name, realm_idx, realm_level, exp, exp_max, age, max_age,
-                   linh_thach, hammers, pity_boss, rebirth_count, free_points, is_dev,
-                   last_cultivate_time, stats_json, roots_json, destiny_json, equipment_json, inventory_json
-            FROM characters WHERE telegram_id = ?
-        """, (str(telegram_id),))
-        rows = c.fetchall()
-
+@app.get("/api/slots/{tg_id}")
+def get_slots(tg_id: str):
+    rows = db.execute(
+        "SELECT * FROM characters WHERE tg_id=? ORDER BY slot ASC",
+        (tg_id,),
+        fetchall=True,
+    )
     slots = {i: None for i in range(1, 6)}
     for r in rows:
-        base_st = json.loads(r["stats_json"])
-        eq = json.loads(r["equipment_json"]) if r["equipment_json"] else DEFAULT_EQUIPMENT
-        tot_st = calculate_total_stats(base_st, eq)
-        realm_title = get_full_realm_title(r["realm_idx"], r["realm_level"])
+        slots[r["slot"]] = parse_char(r)
+    return {"slots": slots, "shop": SHOP_ITEMS}
 
-        slots[r["slot_index"]] = {
-            "char_id": r["id"],
-            "slot_index": r["slot_index"],
-            "name": r["name"],
-            "realm_idx": r["realm_idx"],
-            "realm_level": r["realm_level"],
-            "realm_title": realm_title,
-            "exp": r["exp"],
-            "exp_max": r["exp_max"],
-            "age": r["age"],
-            "max_age": r["max_age"],
-            "linh_thach": r["linh_thach"],
-            "hammers": r["hammers"],
-            "pity_boss": r["pity_boss"],
-            "rebirth_count": r["rebirth_count"],
-            "free_points": r["free_points"],
-            "is_dev": bool(r["is_dev"]),
-            "last_cultivate_time": r["last_cultivate_time"],
-            "base_stats": base_st,
-            "total_stats": tot_st,
-            "roots": json.loads(r["roots_json"]),
-            "destiny": json.loads(r["destiny_json"]) if r["destiny_json"] else None,
-            "equipment": eq,
-            "inventory": json.loads(r["inventory_json"]) if r["inventory_json"] else []
-        }
-    return {"slots": slots}
 
-@app.post("/api/characters/create")
-def create_character(req: RollCharacterRequest):
-    if not (1 <= req.slot_index <= 5):
-        raise HTTPException(400, "Slot không hợp lệ (1-5)")
+@app.post("/api/create_char")
+def create_char(req: CreateCharReq):
+    if req.slot < 1 or req.slot > 5:
+        raise HTTPException(400, "Slot không hợp lệ (1-5).")
+    total_alloc = sum(req.base_stats.values())
+    if total_alloc > 30:
+        raise HTTPException(400, "Tổng điểm khởi tạo vượt quá 30 điểm!")
 
-    is_dev = (req.admin_password == "DevGame")
-    if is_dev:
-        stats = {"linh_luc": 100, "the_chat": 100, "toc_do": 100, "khi_van": 100, "ngo_tinh": 100}
-        roots = ROOT_DATABASE["SSS"][:5] + ROOT_DATABASE["SS"][:2]
-        destiny = {"name": "Chí Tôn Cốt & Khí Vận Chi Tử", "type": "Song Sinh Chí Tôn", "desc": "Mở khóa toàn bộ uy năng thiên địa"}
-        realm_idx, realm_level = 10, 10
-        lt, hammers = 999999, 99
-        max_age = 999999
-    else:
-        # Chuẩn hóa 5 chỉ số từ request (tổng 30đ)
-        ll = int(req.allocated_points.get("linh_luc", 6))
-        tc = int(req.allocated_points.get("the_chat", 6))
-        td = int(req.allocated_points.get("toc_do", 6))
-        kv = int(req.allocated_points.get("khi_van", 6))
-        nt = int(req.allocated_points.get("ngo_tinh", 6))
-        stats = {"linh_luc": ll, "the_chat": tc, "toc_do": td, "khi_van": kv, "ngo_tinh": nt}
+    char_id = f"{req.tg_id}_slot{req.slot}"
+    # Thức tỉnh Dị Cốt (Có cơ hội ra Vĩnh Sinh Bất Diệt Thể)
+    weights = [35, 25, 18, 10, 7, 5]
+    bone = random.choices(BONES, weights=weights, k=1)[0]
+    starter_root = random.choice(ROOTS_POOL[:5])
 
-        root_count = random.choices([1, 2, 3, 4], weights=[45, 35, 15, 5])[0]
-        chosen_roots = []
-        for _ in range(root_count):
-            tier = random.choices(["D", "C", "B", "A", "S", "SS", "SSS"], weights=[55, 25, 10, 5, 3, 1.5, 0.5])[0]
-            r_item = random.choice(ROOT_DATABASE[tier])
-            if r_item not in chosen_roots:
-                chosen_roots.append(r_item)
-
-        roots = chosen_roots
-        destiny = random.choice(DESTINY_DATABASE)
-        realm_idx, realm_level = 0, 1
-        lt, hammers = 300, 1
-        max_age = REALM_LIFESPANS[0]
-
-    starter_equip = dict(DEFAULT_EQUIPMENT)
-    starter_equip["vk1"] = {"name": "Mộc Kiếm Phàm Phẩm", "type": "vk1", "enhance": 0, "stats": {"suc_manh": 20, "bao_kich": 2.0}, "price": 100}
-
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("INSERT OR IGNORE INTO users (telegram_id, username) VALUES (?, ?)", (str(req.telegram_id), req.username))
-        c.execute("DELETE FROM characters WHERE telegram_id = ? AND slot_index = ?", (str(req.telegram_id), req.slot_index))
-        c.execute("""
-            INSERT INTO characters (telegram_id, slot_index, name, realm_idx, realm_level, exp, exp_max, age, max_age,
-                                   linh_thach, hammers, pity_boss, rebirth_count, free_points, is_dev, last_cultivate_time,
-                                   stats_json, roots_json, destiny_json, equipment_json, inventory_json)
-            VALUES (?, ?, ?, ?, ?, 0, 100, 1, ?, ?, ?, 0, 0, 0, ?, 0, ?, ?, ?, ?, ?)
-        """, (
-            str(req.telegram_id), req.slot_index, req.name, realm_idx, realm_level, max_age,
-            lt, hammers, 1 if is_dev else 0, json.dumps(stats), json.dumps(roots),
-            json.dumps(destiny), json.dumps(starter_equip), json.dumps([])
-        ))
-    return {"status": "success", "is_dev": is_dev}
-
-# --- CỐT TRUYỆN & TU LUYỆN (GIỚI HẠN 10 GIÂY) ---
-@app.post("/api/action/story_step")
-def story_step(req: ActionRequest):
     now = time.time()
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("SELECT * FROM characters WHERE id = ?", (req.char_id,))
-        row = c.fetchone()
-        if not row:
-            raise HTTPException(404, "Không tìm thấy nhân vật!")
+    rem_pts = max(0, 30 - total_alloc)
+    ability_init = {"hp": 1, "atk": 1, "mp": 1, "dmg_red": 1, "regen": 1}
 
-        # 1. Kiểm tra giới hạn 10 giây
-        last_time = row["last_cultivate_time"] or 0
-        remain_cooldown = 10.0 - (now - last_time)
-        if remain_cooldown > 0:
-            raise HTTPException(429, f"Tâm cảnh chưa ổn định! Cần điều tức thêm {math.ceil(remain_cooldown)} giây.")
+    db.execute(
+        """
+        INSERT OR REPLACE INTO characters VALUES (
+            ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+        )
+    """,
+        (
+            char_id,
+            req.tg_id,
+            req.slot,
+            req.name.strip()[:20],
+            req.gender,
+            16,
+            100,
+            0,
+            1,
+            0,
+            1500,
+            10,
+            2,
+            0,
+            50,
+            now,
+            0.0,
+            now,
+            0,
+            rem_pts,
+            0,
+            10,
+            0,
+            json.dumps(req.base_stats),
+            json.dumps(ability_init),
+            json.dumps(bone),
+            json.dumps([starter_root]),
+            json.dumps([starter_root["id"]]),
+            json.dumps(["Tân Thủ Tu Tiên"]),
+            "Tân Thủ Tu Tiên",
+            json.dumps([]),
+            json.dumps({
+                "weapon": None,
+                "helm": None,
+                "armor": None,
+                "pants": None,
+                "boots": None,
+                "ring": None,
+            }),
+            json.dumps({"tho_menh": 0, "dot_pha": 0}),
+            0,
+            0,
+        ),
+    )
+    row = db.execute(
+        "SELECT * FROM characters WHERE id=?", (char_id,), fetchone=True
+    )
+    return {"char": parse_char(row)}
 
-        age = row["age"] + 1
-        max_age = row["max_age"]
-        if age >= max_age:
-            raise HTTPException(400, f"Thọ nguyên đã cạn ({age}/{max_age} tuổi)! Hãy chọn [Niết Bàn Trùng Sinh] để tái tạo tiên cơ.")
 
-        curr_lt = row["linh_thach"]
-        realm_idx = row["realm_idx"]
-        realm_lvl = row["realm_level"]
-        exp = row["exp"]
-        exp_max = row["exp_max"]
-        free_pts = row["free_points"]
-        stats = json.loads(row["stats_json"])
+@app.post("/api/select_char")
+def select_char(req: ActionReq):
+    row = db.execute(
+        "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+    )
+    if not row:
+        raise HTTPException(404, "Không tìm thấy nhân vật!")
+    now = time.time()
+    last_active = row["last_active_ts"] or now
+    offline_sec = int(now - last_active)
+    offline_reward = None
 
-        # Tính tu vi thu được trong năm (chịu ảnh hưởng bởi Ngộ Tính & Linh Lực)
-        ngo_tinh = stats.get("ngo_tinh", 0)
-        linh_luc = stats.get("linh_luc", 0)
-        exp_gained = math.floor(15 + (linh_luc * 0.5) + (ngo_tinh * 0.8))
-        exp += exp_gained
+    # Cơ chế 5: Thu hoạch Bế Quan Ngoại Tuyến (Tối đa 12 tiếng = 43200s, kích hoạt khi off >= 5 phút)
+    if offline_sec >= 300:
+        capped_sec = min(43200, offline_sec)
+        mins = capped_sec // 60
+        stones_gain = mins * (12 + row["realm_idx"] * 8)
+        exp_gain = mins * (15 + row["realm_idx"] * 12)
+        new_stones = row["stones"] + stones_gain
+        new_exp = row["exp"] + exp_gain
+        db.execute(
+            "UPDATE characters SET stones=?, exp=?, last_active_ts=? WHERE"
+            " id=?",
+            (new_stones, new_exp, now, req.char_id),
+        )
+        row = db.execute(
+            "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+        )
+        offline_reward = {
+            "minutes": mins,
+            "stones": stones_gain,
+            "exp": exp_gain,
+        }
+    else:
+        db.execute(
+            "UPDATE characters SET last_active_ts=? WHERE id=?",
+            (now, req.char_id),
+        )
 
-        # Phân phối sự kiện Phàm Nhân Tu Tiên theo cảnh giới
-        roll = random.uniform(0, 100)
-        gain_lt = 0
+    return {"char": parse_char(row), "offline_reward": offline_reward}
 
-        if realm_idx == 0:  # Phàm Nhân
-            if age <= 5:
-                log = f"Năm {age} tuổi: Sinh ra tại Thanh Ngưu Trấn nghèo khó, hàng ngày giúp gia đình chăn trâu đốn củi. Thu hoạch +{exp_gained} Tu Vi."
-            elif age <= 10:
-                log = f"Năm {age} tuổi: Tam Thúc giới thiệu gia nhập Thất Huyền Môn, nhẫn nại rèn luyện thể lực tại Thần Kê Cốc. (+{exp_gained} Tu Vi)"
-            else:
-                gain_lt = random.randint(30, 80)
-                log = f"Năm {age} tuổi: Được Mặc Đại Phu chọn làm đệ tử ký danh Thần Thủ Cốc, bắt đầu tiếp xúc thảo dược quý. (+{gain_lt} Linh Thạch, +{exp_gained} Tu Vi)"
-        elif realm_idx == 1:  # Luyện Khí Kỳ
-            if roll < 35:
-                log = f"Năm {age} tuổi: Khổ luyện Trường Xuân Công bên sườn núi, đan điền linh khí luân chuyển. (+{exp_gained} Tu Vi)"
-            elif roll < 70:
-                gain_lt = random.randint(50, 120)
-                log = f"Năm {age} tuổi: ✨ Dùng Chưởng Thiên Bình nhỏ giọt lục dịch thúc chín linh thảo ngàn năm bán đổi {gain_lt} Linh Thạch! (+{exp_gained} Tu Vi)"
-            elif roll < 90:
-                gain_lt = random.randint(150, 300)
-                log = f"Năm {age} tuổi: 💥 Tham gia Huyết Sắc Thí Luyện, liên thủ trảm sát cường địch ma đạo thu thập thảo dược quý! (+{gain_lt} Linh Thạch, +{exp_gained} Tu Vi)"
-            else:
-                gain_lt = -random.randint(30, 70)
-                log = f"Năm {age} tuổi: Đụng độ Dã Lang Bang phục kích, phải tiêu hao phù chú hộ thân thoát thân (-{abs(gain_lt)} Linh Thạch). (+{exp_gained} Tu Vi)"
-        elif realm_idx == 2:  # Trúc Cơ Kỳ
-            if roll < 40:
-                log = f"Năm {age} tuổi: Bế quan trong Bách Dược Viên Hoàng Phong Cốc, ngày đêm vững chắc Trúc Cơ Linh Hải. (+{exp_gained} Tu Vi)"
-            elif roll < 80:
-                gain_lt = random.randint(120, 250)
-                log = f"Năm {age} tuổi: Ma Đạo Lục Tông xâm lấn Thiên Nam, phụng mệnh tuần tra chiến trường thu chiến lợi phẩm (+{gain_lt} Linh Thạch). (+{exp_gained} Tu Vi)"
-            else:
-                gain_lt = random.randint(300, 500)
-                log = f"Năm {age} tuổi: 🌟 Lĩnh ngộ tầng thứ nhất Đại Diễn Quyết, thần thức tăng vọt! (+{gain_lt} Linh Thạch, +{exp_gained} Tu Vi)"
-        elif realm_idx == 3:  # Kim Đan Kỳ
-            if roll < 45:
-                log = f"Năm {age} tuổi: Lưu lạc tới Loạn Tinh Hải, mượn động phủ Thiên Tinh Thành ngưng kết Kim Đan. (+{exp_gained} Tu Vi)"
-            elif roll < 85:
-                gain_lt = random.randint(250, 600)
-                log = f"Năm {age} tuổi: Tiến vào Hư Thiên Điện tranh đoạt Hư Thiên Đỉnh, dùng Thanh Trúc Ong Vân Kiếm trảm địch đoạt bảo (+{gain_lt} Linh Thạch). (+{exp_gained} Tu Vi)"
-            else:
-                gain_lt = -random.randint(100, 200)
-                log = f"Năm {age} tuổi: Bị Cực Huyễn Lão Ma truy nã phong tỏa vùng biển, tiêu tốn linh thạch kích hoạt Cổ Truyền Tống Trận thoát thân (-{abs(gain_lt)} Linh Thạch)."
-        elif realm_idx == 4:  # Nguyên Anh Kỳ
-            gain_lt = random.randint(400, 900)
-            log = f"Năm {age} tuổi: Trở về Thiên Nam làm Trưởng Lão Lạc Vân Tông, đại náo Trụy Ma Cốc thu thập Cổ Bảo Vạn Niên! (+{gain_lt} Linh Thạch, +{exp_gained} Tu Vi)"
-        else:  # Hóa Thần & Thượng Giới
-            gain_lt = random.randint(800, 2000)
-            log = f"Năm {age} tuổi: Đột phá Hóa Thần phi thăng Linh Giới, độ kiếp lôi đình chấn động chư thiên! (+{gain_lt} Linh Thạch, +{exp_gained} Tu Vi)"
 
-        new_lt = max(0, curr_lt + gain_lt)
+@app.post("/api/cultivate")
+def cultivate(req: ActionReq):
+    row = db.execute(
+        "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+    )
+    if not row:
+        raise HTTPException(404, "Nhân vật không tồn tại.")
 
-        # Xử lý Tăng Cấp độ (Level 1-10) và Đột phá Cảnh Giới
-        leveled_up = False
-        while exp >= exp_max:
-            exp -= exp_max
-            if realm_lvl < 10:
-                realm_lvl += 1
-                exp_max = math.floor(exp_max * 1.35)
-                log += f" 🌟 [THĂNG TIẾN] Chạm tới Cấp {realm_lvl} ({get_sub_stage(realm_lvl)})!"
-                # Mỗi 10 cấp tích lũy hoặc mỗi lần thăng tiến tặng điểm
-                if realm_lvl % 5 == 0:
-                    free_pts += 1
-                    log += " (Nhận +1 Điểm Tiềm Năng!)"
-            else:
-                # Đang ở Cấp 10 Viên Mãn -> Đột phá lên Cảnh Giới mới
-                if realm_idx < len(REALM_NAMES) - 1:
-                    realm_idx += 1
-                    realm_lvl = 1
-                    exp_max = math.floor(exp_max * 1.6)
-                    max_age = REALM_LIFESPANS[realm_idx]
-                    free_pts += 2
-                    log += f" ⚡⚡ [ĐỘT PHÁ CẢNH GIỚI] Tấn thăng [{REALM_NAMES[realm_idx]}]! Thọ nguyên tăng lên {max_age} năm, nhận +2 Điểm Tiềm Năng!"
-                break
+    now = time.time()
+    # Chống spam dưới 0.42 giây (Cooldown 0.5s chuẩn)
+    if now - (row["last_cultivate_ts"] or 0) < 0.42:
+        raise HTTPException(
+            429, "Đạo hữu vận công quá nhanh, hãy chờ 0.5 giây!"
+        )
 
-        c.execute("""
-            UPDATE characters
-            SET age = ?, max_age = ?, linh_thach = ?, realm_idx = ?, realm_level = ?,
-                exp = ?, exp_max = ?, free_points = ?, last_cultivate_time = ?
-            WHERE id = ?
-        """, (age, max_age, new_lt, realm_idx, realm_lvl, exp, exp_max, free_pts, now, req.char_id))
+    bone = json.loads(row["bone"])
+    immortal = bone.get("immortal", False)
+    if not immortal and row["age"] >= row["max_age"]:
+        raise HTTPException(
+            400,
+            "Thọ nguyên đã cạn! Hãy dùng Thọ Mệnh Đan hoặc Tọa Hóa / Niết Bàn"
+            " Trùng Sinh!",
+        )
 
-    return {
-        "status": "success",
-        "log": log,
-        "age": age,
-        "max_age": max_age,
-        "linh_thach": new_lt,
-        "realm_title": get_full_realm_title(realm_idx, realm_lvl),
-        "exp": exp,
-        "exp_max": exp_max,
-        "free_points": free_pts
-    }
+    base_stats = json.loads(row["base_stats"])
+    realm_idx = row["realm_idx"]
+    level = row["level"]
+    realm_info = REALMS[min(realm_idx, len(REALMS) - 1)]
+    exp_req = int(realm_info["base_exp"] * (level**1.35))
 
-# --- CỘNG ĐIỂM TIỀM NĂNG TỰ DO ---
-@app.post("/api/action/add_stat_point")
-def add_stat_point(req: AddStatPointRequest):
-    valid_keys = ["linh_luc", "the_chat", "toc_do", "khi_van", "ngo_tinh"]
-    if req.stat_key not in valid_keys:
-        raise HTTPException(400, "Thuộc tính không hợp lệ!")
+    # Kiểm tra Bình Cảnh Cấp 10 Viên Mãn
+    if level >= 10 and row["exp"] >= exp_req:
+        raise HTTPException(
+            400,
+            "Đã chạm Bình Cảnh Viên Mãn (Cấp 10)! Hãy bấm [Đột Phá Cảnh Giới]!",
+        )
 
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("SELECT free_points, stats_json FROM characters WHERE id = ?", (req.char_id,))
-        row = c.fetchone()
-        if not row:
-            raise HTTPException(404, "Nhân vật không tồn tại!")
+    age = row["age"] + 1
+    ability_pts = row["ability_pts"] + 10  # +10 điểm năng lực mỗi năm tuổi
+    stones = row["stones"]
 
-        free_pts = row["free_points"]
-        if free_pts < 1:
-            raise HTTPException(400, "Không còn điểm tiềm năng tự do!")
+    # Tính EXP tu luyện + Kỳ Ngộ / Tâm Ma
+    exp_gain = int(
+        (28 + base_stats["ngo_tinh"] * 3.5 + base_stats["linh_luc"] * 2.0)
+        * (1 + realm_idx * 0.25)
+    )
+    logs = [
+        f"Năm {age} tuổi: Tĩnh tọa thổ nạp, Tu vi +{exp_gain}, nhận +10 Điểm"
+        " Năng Lực."
+    ]
 
-        stats = json.loads(row["stats_json"])
-        if stats.get(req.stat_key, 0) >= 100:
-            raise HTTPException(400, "Thuộc tính này đã đạt giới hạn tối đa 100 điểm!")
-
-        stats[req.stat_key] += 1
-        free_pts -= 1
-        c.execute("UPDATE characters SET free_points = ?, stats_json = ? WHERE id = ?", (free_pts, json.dumps(stats), req.char_id))
-
-    return {"status": "success", "new_stat_val": stats[req.stat_key], "remain_points": free_pts}
-
-# --- NIẾT BÀN TRÙNG SINH ---
-@app.post("/api/action/rebirth")
-def rebirth_character(req: ActionRequest):
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("SELECT * FROM characters WHERE id = ?", (req.char_id,))
-        row = c.fetchone()
-        if not row:
-            raise HTTPException(404, "Không tìm thấy nhân vật!")
-
-        rebirth_count = row["rebirth_count"] + 1
-        bonus_points = 10  # Mỗi lần trùng sinh thưởng 10 điểm tiềm năng vĩnh viễn
-        new_free_points = row["free_points"] + bonus_points
-
-        # Đặt lại tuổi về 1, cảnh giới về Phàm Nhân cấp 1
-        new_realm_idx = 0
-        new_realm_lvl = 1
-        new_max_age = REALM_LIFESPANS[0]
-
-        c.execute("""
-            UPDATE characters
-            SET age = 1, max_age = ?, realm_idx = ?, realm_level = ?, exp = 0, exp_max = 100,
-                rebirth_count = ?, free_points = ?
-            WHERE id = ?
-        """, (new_max_age, new_realm_idx, new_realm_lvl, rebirth_count, new_free_points, req.char_id))
-
-    return {
-        "status": "success",
-        "msg": f"Niết Bàn Trùng Sinh lần thứ {rebirth_count} thành công! Tuổi tái lập về 1, nhận thêm +{bonus_points} Điểm Tiềm Năng vĩnh viễn!",
-        "rebirth_count": rebirth_count,
-        "free_points": new_free_points
-    }
-
-# --- RANDOM LINH CĂN BẰNG 1000 LINH THẠCH ---
-@app.post("/api/action/gacha_root")
-def gacha_root(req: ActionRequest):
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("SELECT linh_thach, roots_json FROM characters WHERE id = ?", (req.char_id,))
-        row = c.fetchone()
-        if not row:
-            raise HTTPException(404, "Không tìm thấy nhân vật!")
-
-        lt = row["linh_thach"]
-        if lt < 1000:
-            raise HTTPException(400, "Cần 1.000 Linh Thạch để tẩy luyện gacha Linh Căn!")
-
-        lt -= 1000
-        roots = json.loads(row["roots_json"])
-        if len(roots) >= 7:
-            raise HTTPException(400, "Linh căn xuất chiến đã đầy tối đa (7/7)! Hãy xóa bớt hoặc dung luyện.")
-
-        tier = random.choices(["D", "C", "B", "A", "S", "SS", "SSS"], weights=[50, 25, 12, 7, 4, 1.5, 0.5])[0]
-        new_root = random.choice(ROOT_DATABASE[tier])
-        roots.append(new_root)
-
-        c.execute("UPDATE characters SET linh_thach = ?, roots_json = ? WHERE id = ?", (lt, json.dumps(roots), req.char_id))
-
-    return {"status": "success", "msg": f"Cơ duyên giáng hạ! Thu nhận thành công [{new_root['tier']}] {new_root['name']}!", "new_root": new_root, "linh_thach": lt}
-
-# --- SĂN BOSS ĐƠN (LOẠN TINH HẢI) ---
-@app.post("/api/action/hunt_boss")
-def hunt_boss(req: ActionRequest):
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("SELECT linh_thach, hammers, pity_boss, stats_json FROM characters WHERE id = ?", (req.char_id,))
-        row = c.fetchone()
-        if not row:
-            raise HTTPException(404, "Không tìm thấy nhân vật!")
-
-        lt, hammers, pity = row["linh_thach"], row["hammers"], row["pity_boss"] + 1
-        stats = json.loads(row["stats_json"])
-        gain_lt = random.randint(250, 500)
-        lt += gain_lt
-
-        drop_rate = 1.0 + (stats.get("khi_van", 0) / 50.0)
-        got_hammer = False
-
-        if pity >= 80 or random.uniform(0, 100) <= drop_rate:
-            got_hammer = True
-            hammers += 1
-            pity = 0
-            msg = f"🎉 TRẢM SÁT THÀNH CÔNG YÊU VƯƠNG! Rơi 1 THIÊN CÔNG THẦN CHÙY (Búa)! (+{gain_lt} Linh Thạch)"
+    # Kỳ Ngộ (Dựa vào Khí Vận)
+    fortune_chance = min(25.0, 2.0 + base_stats["khi_van"] * 0.2)
+    if random.uniform(0, 100) < fortune_chance:
+        bonus_st = random.randint(50, 200) * (realm_idx + 1)
+        stones += bonus_st
+        exp_gain = int(exp_gain * 1.5)
+        logs.append(
+            f"✨ [KỲ NGỘ] Nhặt được túi trữ vật cổ tu, nhận +{bonus_st} Linh"
+            " Thạch và đại tăng tu vi!"
+        )
+    # Tâm Ma (Nếu không gặp kỳ ngộ, 6% tỉ lệ xuất hiện)
+    elif random.uniform(0, 100) < 6.0:
+        if base_stats["ngo_tinh"] >= random.randint(10, 45):
+            exp_gain = int(exp_gain * 1.6)
+            logs.append(
+                "🧘 [TRẢM TÂM MA] Ngộ tính cao thâm, chém đứt tâm ma, đạo tâm"
+                " thông suốt (+60% Tu Vi)!"
+            )
         else:
-            msg = f"Trảm sát Yêu Thú Loạn Tinh Hải đổi +{gain_lt} Linh Thạch. Búa chưa rơi. (Bảo hiểm: {pity}/80)"
+            exp_gain = int(exp_gain * 0.4)
+            logs.append(
+                "⚠️ [TÂM MA QUẤY NHIỄU] Tâm thần bất định, hiệu suất tu luyện"
+                " năm nay giảm sút!"
+            )
 
-        c.execute("UPDATE characters SET linh_thach = ?, hammers = ?, pity_boss = ? WHERE id = ?", (lt, hammers, pity, req.char_id))
+    new_exp = row["exp"] + exp_gain
+    while level < 10 and new_exp >= exp_req:
+        new_exp -= exp_req
+        level += 1
+        exp_req = int(realm_info["base_exp"] * (level**1.35))
+        logs.append(
+            f"🎉 Đột phá tiểu cảnh giới: Đạt tới {realm_info['name']} Cấp"
+            f" {level} ({get_sub_stage(level)})!"
+        )
 
-    return {"status": "success", "msg": msg, "got_hammer": got_hammer, "hammers": hammers, "linh_thach": lt, "pity": pity}
+    if level >= 10 and new_exp >= exp_req:
+        new_exp = exp_req
+        logs.append(
+            "⚡ Tu vi đã đạt Cấp 10 Viên Mãn! Hãy chuẩn bị Đan Dược và Độ Lôi"
+            " Kiếp Đột Phá!"
+        )
 
-# --- BOSS THẾ GIỚI (WORLD BOSS - DÀNH CHO DEV SPAM & TOÀN SERVER ĐÁNH) ---
-@app.post("/api/dev/spawn_world_boss")
-def spawn_world_boss(req: SpawnBossRequest):
-    if req.admin_password != "DevGame":
-        raise HTTPException(403, "Mật mã DEV không chính xác!")
+    db.execute(
+        """
+        UPDATE characters
+        SET age=?, exp=?, level=?, stones=?, ability_pts=?, last_cultivate_ts=?, last_active_ts=?
+        WHERE id=?
+    """,
+        (age, new_exp, level, stones, ability_pts, now, now, req.char_id),
+    )
 
-    with get_db() as conn:
-        c = conn.cursor()
-        # Đóng boss cũ
-        c.execute("UPDATE world_boss SET is_alive = 0 WHERE is_alive = 1")
-        # Tạo boss mới
-        c.execute("""
-            INSERT INTO world_boss (name, max_hp, current_hp, attack, armor, dodge, counter, lifesteal, is_alive, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
-        """, (req.name, req.hp, req.hp, req.attack, req.armor, req.dodge, req.counter, req.lifesteal, time.time()))
-        # Reset lượt đánh
-        c.execute("DELETE FROM boss_attacks")
+    updated = db.execute(
+        "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+    )
+    return {"char": parse_char(updated), "logs": logs}
 
-    return {"status": "success", "msg": f"Đã giáng lâm Boss Thế Giới: [{req.name}] với {req.hp} HP!"}
 
-@app.get("/api/world_boss/status")
-def get_world_boss_status(char_id: int):
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("SELECT * FROM world_boss WHERE is_alive = 1 ORDER BY id DESC LIMIT 1")
-        boss = c.fetchone()
-        if not boss:
-            return {"active": False}
+@app.post("/api/breakthrough")
+def breakthrough(req: ActionReq):
+    row = db.execute(
+        "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+    )
+    if not row:
+        raise HTTPException(404, "Không tìm thấy nhân vật.")
+    char = parse_char(row)
+    if not char["at_bottleneck"]:
+        raise HTTPException(400, "Chưa đạt Cấp 10 Viên Mãn để đột phá!")
+    if row["realm_idx"] >= len(REALMS) - 1:
+        raise HTTPException(400, "Đạo hữu đã đạt đỉnh phong Độ Kiếp Chân Tiên!")
 
-        c.execute("SELECT attack_count FROM boss_attacks WHERE boss_id = ? AND char_id = ?", (boss["id"], char_id))
-        att_row = c.fetchone()
-        attacks_left = 5 - (att_row["attack_count"] if att_row else 0)
+    # Tỉ lệ cơ bản 80% + Đan dược hỗ trợ (+10%)
+    chance = min(100, 80 + row["breakthrough_bonus"])
+    roll = random.uniform(0, 100)
+    logs = []
 
-    return {
-        "active": True,
-        "boss": {
-            "id": boss["id"],
-            "name": boss["name"],
-            "max_hp": boss["max_hp"],
-            "current_hp": boss["current_hp"],
-            "attack": boss["attack"],
-            "armor": boss["armor"],
-            "dodge": boss["dodge"],
-            "counter": boss["counter"],
-            "lifesteal": boss["lifesteal"],
-            "attacks_left": max(0, attacks_left)
+    if roll > chance:
+        new_exp = int(row["exp"] * 0.85)
+        db.execute(
+            "UPDATE characters SET exp=?, breakthrough_bonus=0 WHERE id=?",
+            (new_exp, req.char_id),
+        )
+        logs.append(
+            f"💥 [XUNG QUAN THẤT BẠI] Tỉ lệ {chance}% nhưng khí huyết nghịch"
+            " loạn, tụt 15% Tu Vi!"
+        )
+        updated = db.execute(
+            "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+        )
+        return {"char": parse_char(updated), "success": False, "logs": logs}
+
+    # Vượt 3 Đạo Thiên Lôi Kiếp
+    max_hp = char["combat_stats"]["hp"]
+    dmg_red = char["combat_stats"]["dmg_red"] / 100.0
+    cur_hp = max_hp
+    logs.append(
+        f"🌩️ [ĐỘ KIẾP] Xung quan thành công ({chance}%), Cửu Thiên Lôi Kiếp"
+        " giáng xuống 3 đạo thiên lôi!"
+    )
+
+    for strike in range(1, 4):
+        raw_pct = random.uniform(0.22, 0.34)
+        strike_dmg = int(max_hp * raw_pct * (1.0 - dmg_red * 0.7))
+        cur_hp -= strike_dmg
+        logs.append(
+            f"⚡ Đạo Thiên Lôi thứ {strike}: Giáng xuống gây {strike_dmg} sát"
+            f" thương! (HP còn: {max(0, cur_hp)}/{max_hp})"
+        )
+
+    if cur_hp <= 0:
+        new_exp = int(row["exp"] * 0.85)
+        db.execute(
+            "UPDATE characters SET exp=?, breakthrough_bonus=0 WHERE id=?",
+            (new_exp, req.char_id),
+        )
+        logs.append(
+            "💀 Không chống nổi đạo Thiên Lôi thứ 3! Độ kiếp thất bại, kinh"
+            " mạch tổn thương tụt 15% Tu Vi!"
+        )
+        updated = db.execute(
+            "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+        )
+        return {"char": parse_char(updated), "success": False, "logs": logs}
+
+    # Độ kiếp thành công -> Lên đại cảnh giới mới
+    new_realm_idx = row["realm_idx"] + 1
+    new_realm = REALMS[new_realm_idx]
+    new_max_age = max(row["max_age"], new_realm["max_age"])
+
+    db.execute(
+        """
+        UPDATE characters
+        SET realm_idx=?, level=1, exp=0, max_age=?, breakthrough_bonus=0
+        WHERE id=?
+    """,
+        (new_realm_idx, new_max_age, req.char_id),
+    )
+
+    logs.append(
+        "🌈 [ĐỘ KIẾP THÀNH CÔNG] Vượt qua 3 đạo Thiên Lôi, chính thức bước vào"
+        f" {new_realm['name']}! Thọ nguyên tăng lên {new_max_age} năm!"
+    )
+    updated = db.execute(
+        "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+    )
+    return {"char": parse_char(updated), "success": True, "logs": logs}
+
+
+@app.post("/api/rebirth")
+def rebirth(req: ActionReq):
+    row = db.execute(
+        "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+    )
+    if not row:
+        raise HTTPException(404, "Không tìm thấy nhân vật.")
+
+    bone = json.loads(row["bone"])
+    immortal = bone.get("immortal", False)
+    age = row["age"]
+    max_age = row["max_age"]
+
+    # Quy tắc: Đủ 500 tuổi -> Niết Bàn (+15 điểm). Chưa đủ 500 tuổi nhưng đã cạn thọ nguyên -> Tọa Hóa (+5 điểm)
+    if age >= 500:
+        bonus_pts = 15
+        msg = (
+            f"🔥 [NIẾT BÀN TRÙNG SINH] Đạo hữu ở tuổi {age} viên tịch chuyển"
+            " sinh, nhận +15 Điểm Tiềm Năng và mở khóa bảng Tiên Căn!"
+        )
+    elif not immortal and age >= max_age:
+        bonus_pts = 5
+        msg = (
+            f"🕯️ [TỌA HÓA CHUYỂN SINH] Thọ nguyên cạn kiệt trước 500 tuổi ({age}"
+            " tuổi), chuyển sinh nhận +5 Điểm Tiềm Năng an ủi!"
+        )
+    else:
+        raise HTTPException(
+            400, "Phải đạt đủ 500 tuổi mới được phép Niết Bàn Trùng Sinh!"
+        )
+
+    new_rebirth = row["rebirth_count"] + 1
+    new_pot = row["potential_pts"] + bonus_pts
+    titles = json.loads(row["titles"])
+    if age >= 500 and "Luân Hồi Giả" not in titles:
+        titles.append("Luân Hồi Giả")
+
+    ability_reset = {"hp": 1, "atk": 1, "mp": 1, "dmg_red": 1, "regen": 1}
+
+    db.execute(
+        """
+        UPDATE characters
+        SET age=1, max_age=100, realm_idx=0, level=1, exp=0,
+            rebirth_count=?, potential_pts=?, can_allocate_base=1,
+            ability_pts=10, ability_stats=?, titles=?
+        WHERE id=?
+    """,
+        (
+            new_rebirth,
+            new_pot,
+            json.dumps(ability_reset),
+            json.dumps(titles),
+            req.char_id,
+        ),
+    )
+
+    updated = db.execute(
+        "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+    )
+    return {"char": parse_char(updated), "message": msg}
+
+
+@app.post("/api/allocate_base")
+def allocate_base(req: ActionReq):
+    row = db.execute(
+        "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+    )
+    if not row:
+        raise HTTPException(404, "Không tìm thấy nhân vật.")
+    if not row["can_allocate_base"]:
+        raise HTTPException(
+            400,
+            "Bảng 5 thuộc tính gốc chỉ mở sau khi Niết Bàn Trùng Sinh! Hãy"
+            " hoàn tất phân bổ hoặc chờ lần Niết Bàn tiếp theo.",
+        )
+
+    action = req.extra.get("action")  # "add", "reset", "lock"
+    base_stats = json.loads(row["base_stats"])
+    pot = row["potential_pts"]
+
+    if action == "reset":
+        # Tẩy Tủy: Thu hồi toàn bộ điểm đã cộng về quỹ điểm chung
+        total_pool = pot + sum(base_stats.values())
+        for k in base_stats:
+            base_stats[k] = 0
+        db.execute(
+            "UPDATE characters SET base_stats=?, potential_pts=? WHERE id=?",
+            (json.dumps(base_stats), total_pool, req.char_id),
+        )
+    elif action == "add":
+        stat_key = req.extra.get("stat")
+        amount = int(req.extra.get("amount", 1))
+        if stat_key not in base_stats:
+            raise HTTPException(400, "Thuộc tính không hợp lệ.")
+        if pot < amount:
+            raise HTTPException(400, "Không đủ Điểm Tiềm Năng!")
+        if base_stats[stat_key] + amount > 100:
+            raise HTTPException(400, "Mỗi thuộc tính gốc tối đa 100 điểm!")
+        base_stats[stat_key] += amount
+        pot -= amount
+        db.execute(
+            "UPDATE characters SET base_stats=?, potential_pts=? WHERE id=?",
+            (json.dumps(base_stats), pot, req.char_id),
+        )
+    elif action == "lock":
+        db.execute(
+            "UPDATE characters SET can_allocate_base=0 WHERE id=?",
+            (req.char_id,),
+        )
+
+    updated = db.execute(
+        "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+    )
+    return {"char": parse_char(updated)}
+
+
+@app.post("/api/allocate_ability")
+def allocate_ability(req: ActionReq):
+    row = db.execute(
+        "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+    )
+    if not row:
+        raise HTTPException(404, "Không tìm thấy nhân vật.")
+
+    stat_key = req.extra.get("stat")  # hp, atk, mp, dmg_red, regen
+    amount = int(req.extra.get("amount", 1))
+    ability_stats = json.loads(row["ability_stats"])
+    pts = row["ability_pts"]
+
+    if stat_key not in ability_stats or amount <= 0:
+        raise HTTPException(400, "Mục năng lực không hợp lệ.")
+    if pts < amount:
+        raise HTTPException(400, "Không đủ Điểm Năng Lực!")
+
+    if stat_key == "dmg_red":
+        if ability_stats["dmg_red"] + amount > 150:  # 150 * 0.1% = 15.0% max
+            raise HTTPException(
+                400, "Giảm Sát Thương trong bảng Năng Lực đã đạt tối đa 15%!"
+            )
+
+    ability_stats[stat_key] += amount
+    pts -= amount
+    db.execute(
+        "UPDATE characters SET ability_stats=?, ability_pts=? WHERE id=?",
+        (json.dumps(ability_stats), pts, req.char_id),
+    )
+    updated = db.execute(
+        "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+    )
+    return {"char": parse_char(updated)}
+
+
+@app.post("/api/toggle_root")
+def toggle_root(req: ActionReq):
+    row = db.execute(
+        "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+    )
+    if not row:
+        raise HTTPException(404, "Không tìm thấy nhân vật.")
+    root_id = req.extra.get("root_id")
+    roots_inv = json.loads(row["roots_inv"])
+    roots_eq = json.loads(row["roots_equipped"])
+
+    if not any(r["id"] == root_id for r in roots_inv):
+        raise HTTPException(400, "Không sở hữu Linh Căn này trong kho!")
+
+    if root_id in roots_eq:
+        if len(roots_eq) <= 1:
+            raise HTTPException(
+                400, "Phải giữ ít nhất 1 Linh Căn xuất trận hộ thể!"
+            )
+        roots_eq.remove(root_id)
+    else:
+        if len(roots_eq) >= 7:
+            raise HTTPException(
+                400,
+                "Tối đa chỉ được chọn 7 Linh Căn xuất trận! Hãy tháo bớt 1 cái"
+                " trước.",
+            )
+        roots_eq.append(root_id)
+
+    db.execute(
+        "UPDATE characters SET roots_equipped=? WHERE id=?",
+        (json.dumps(roots_eq), req.char_id),
+    )
+    updated = db.execute(
+        "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+    )
+    return {"char": parse_char(updated)}
+
+
+@app.post("/api/equip_title")
+def equip_title(req: ActionReq):
+    row = db.execute(
+        "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+    )
+    title = req.extra.get("title")
+    titles = json.loads(row["titles"])
+    if title not in titles:
+        raise HTTPException(400, "Chưa mở khóa danh hiệu này!")
+    db.execute(
+        "UPDATE characters SET equipped_title=? WHERE id=?",
+        (title, req.char_id),
+    )
+    updated = db.execute(
+        "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+    )
+    return {"char": parse_char(updated)}
+
+
+@app.post("/api/shop_buy")
+def shop_buy(req: ActionReq):
+    row = db.execute(
+        "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+    )
+    if not row:
+        raise HTTPException(404, "Không tìm thấy nhân vật.")
+    item_id = req.extra.get("item_id")
+    shop_item = next((x for x in SHOP_ITEMS if x["id"] == item_id), None)
+    if not shop_item:
+        raise HTTPException(404, "Vật phẩm không có trong Vạn Bảo Các.")
+
+    if row["stones"] < shop_item["price"]:
+        raise HTTPException(400, "Không đủ Linh Thạch!")
+
+    stones = row["stones"] - shop_item["price"]
+    itype = shop_item["type"]
+    msg = ""
+
+    if itype == "gacha":
+        # Gacha Linh Căn 1.000 LT - Trùng lặp KHÔNG hoàn trả
+        roots_inv = json.loads(row["roots_inv"])
+        weights = [22, 18, 16, 13, 11, 8, 5, 4, 2, 1]
+        rolled = random.choices(ROOTS_POOL, weights=weights, k=1)[0]
+        if any(r["id"] == rolled["id"] for r in roots_inv):
+            msg = (
+                f"🎲 Quay ra [{rolled['name']}] (Phẩm {rolled['rank']}) ĐÃ CÓ"
+                " TRONG KHO! Tiêu hao 1.000 Linh Thạch (Không hoàn trả)."
+            )
+        else:
+            roots_inv.append(rolled)
+            msg = (
+                f"🎉 Chúc mừng! Khai mở Linh Căn mới: [{rolled['name']}] (Phẩm"
+                f" {rolled['rank']}) đã lưu vào Kho Linh Căn!"
+            )
+        db.execute(
+            "UPDATE characters SET stones=?, roots_inv=? WHERE id=?",
+            (stones, json.dumps(roots_inv), req.char_id),
+        )
+
+    elif itype == "hammer":
+        hammers = row["hammers"] + 1
+        msg = "🔨 Đã mua +1 Thiên Công Thần Chùy!"
+        db.execute(
+            "UPDATE characters SET stones=?, hammers=? WHERE id=?",
+            (stones, hammers, req.char_id),
+        )
+
+    elif itype == "pill_age":
+        pills = json.loads(row["pills"])
+        pills["tho_menh"] = pills.get("tho_menh", 0) + 1
+        msg = "🍑 Đã mua +1 Thọ Mệnh Đan (Vào túi Đan Dược bấm dùng để +50 năm tuổi thọ)!"
+        db.execute(
+            "UPDATE characters SET stones=?, pills=? WHERE id=?",
+            (stones, json.dumps(pills), req.char_id),
+        )
+
+    elif itype == "pill_break":
+        pills = json.loads(row["pills"])
+        pills["dot_pha"] = pills.get("dot_pha", 0) + 1
+        msg = (
+            f"💊 Đã mua +1 {shop_item['name']} (Vào túi Đan Dược dùng để +10%"
+            " tỉ lệ Đột Phá)!"
+        )
+        db.execute(
+            "UPDATE characters SET stones=?, pills=? WHERE id=?",
+            (stones, json.dumps(pills), req.char_id),
+        )
+
+    elif itype == "pill_mp":
+        ab = json.loads(row["ability_stats"])
+        ab["mp"] += 2
+        msg = "💧 Đã uống Cửu Chuyển Hồi Linh Đan: Vĩnh viễn +20 MP!"
+        db.execute(
+            "UPDATE characters SET stones=?, ability_stats=? WHERE id=?",
+            (stones, json.dumps(ab), req.char_id),
+        )
+
+    elif itype == "pill_hp":
+        ab = json.loads(row["ability_stats"])
+        ab["hp"] += 5
+        msg = "❤️ Đã uống Hồi Xuân Chân Đan: Vĩnh viễn +25 HP!"
+        db.execute(
+            "UPDATE characters SET stones=?, ability_stats=? WHERE id=?",
+            (stones, json.dumps(ab), req.char_id),
+        )
+
+    elif itype == "equip":
+        inv = json.loads(row["inventory"])
+        new_eq = {
+            "uid": f"eq_{int(time.time()*1000)}_{random.randint(100,999)}",
+            "id": shop_item["id"],
+            "name": shop_item["name"],
+            "slot": shop_item["slot"],
+            "rank": shop_item["rank"],
+            "level": 0,
+            "atk": shop_item["atk"],
+            "hp": shop_item["hp"],
+            "crit": shop_item["crit"],
+            "dodge": shop_item["dodge"],
+            "lifesteal": shop_item["lifesteal"],
+            "dmg_red": shop_item["dmg_red"],
+            "desc": shop_item["desc"],
         }
-    }
+        inv.append(new_eq)
+        msg = f"🗡️ Đã mua trang bị [{shop_item['name']}] đưa vào Hành Trang!"
+        db.execute(
+            "UPDATE characters SET stones=?, inventory=? WHERE id=?",
+            (stones, json.dumps(inv), req.char_id),
+        )
 
-@app.post("/api/world_boss/attack")
-def attack_world_boss(req: ActionRequest):
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("SELECT * FROM world_boss WHERE is_alive = 1 ORDER BY id DESC LIMIT 1")
-        boss = c.fetchone()
-        if not boss or boss["current_hp"] <= 0:
-            raise HTTPException(400, "Hiện tại không có Boss Thế Giới còn sống!")
+    updated = db.execute(
+        "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+    )
+    return {"char": parse_char(updated), "message": msg}
 
-        c.execute("SELECT attack_count FROM boss_attacks WHERE boss_id = ? AND char_id = ?", (boss["id"], req.char_id))
-        att_row = c.fetchone()
-        cnt = att_row["attack_count"] if att_row else 0
-        if cnt >= 5:
-            raise HTTPException(400, "Đạo hữu đã dùng hết 5 lượt khiêu chiến Boss Thế Giới này!")
 
-        c.execute("SELECT id, name, stats_json, equipment_json, linh_thach, hammers FROM characters WHERE id = ?", (req.char_id,))
-        char = c.fetchone()
-        if not char:
-            raise HTTPException(404, "Nhân vật không tồn tại!")
+@app.post("/api/use_pill")
+def use_pill(req: ActionReq):
+    row = db.execute(
+        "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+    )
+    pill_type = req.extra.get("pill_type")  # "tho_menh" or "dot_pha"
+    pills = json.loads(row["pills"])
 
-        tot_stats = calculate_total_stats(json.loads(char["stats_json"]), json.loads(char["equipment_json"]) if char["equipment_json"] else DEFAULT_EQUIPMENT)
-        f_player = Fighter(char["name"], tot_stats)
+    if pills.get(pill_type, 0) <= 0:
+        raise HTTPException(400, "Bạn không có đan dược này trong túi!")
 
-        boss_stats = {
-            "hp": boss["current_hp"],
-            "suc_manh": boss["attack"],
-            "toc_do": 80,
-            "thu": boss["armor"],
-            "ne_tranh": boss["dodge"],
-            "phan_kich": boss["counter"],
-            "hut_mau": boss["lifesteal"],
-            "bao_kich": 10.0,
-            "lien_kich": 5.0,
-            "choang": 5.0
-        }
-        f_boss = Fighter(boss["name"], boss_stats)
+    if pill_type == "tho_menh":
+        pills["tho_menh"] -= 1
+        new_max_age = row["max_age"] + 50
+        db.execute(
+            "UPDATE characters SET max_age=?, pills=? WHERE id=?",
+            (new_max_age, json.dumps(pills), req.char_id),
+        )
+        msg = "🍑 Đã phục dụng Thọ Mệnh Đan: Thọ nguyên tối đa tăng thêm +50 năm!"
+    elif pill_type == "dot_pha":
+        if row["breakthrough_bonus"] >= 10:
+            raise HTTPException(
+                400, "Đã cắn Đan Đột Phá cho bình cảnh này rồi (+10% tối đa)!"
+            )
+        pills["dot_pha"] -= 1
+        db.execute(
+            "UPDATE characters SET breakthrough_bonus=10, pills=? WHERE id=?",
+            (json.dumps(pills), req.char_id),
+        )
+        msg = (
+            "💊 Đã phục dụng Đan Đột Phá: Tỉ lệ đột phá bình cảnh tăng từ 80%"
+            " lên 90%!"
+        )
+    else:
+        raise HTTPException(400, "Loại đan dược không hợp lệ.")
 
-        res = simulate_battle(f_player, f_boss, max_turns=15)
-        dmg_dealt = max(0, boss["current_hp"] - f_boss.current_hp)
-        new_boss_hp = max(0, boss["current_hp"] - dmg_dealt)
+    updated = db.execute(
+        "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+    )
+    return {"char": parse_char(updated), "message": msg}
 
-        # Cập nhật máu boss và lượt đánh
-        c.execute("UPDATE world_boss SET current_hp = ?, is_alive = ? WHERE id = ?", (new_boss_hp, 1 if new_boss_hp > 0 else 0, boss["id"]))
-        c.execute("""
-            INSERT INTO boss_attacks (boss_id, char_id, attack_count) VALUES (?, ?, 1)
-            ON CONFLICT(boss_id, char_id) DO UPDATE SET attack_count = attack_count + 1
-        """, (boss["id"], req.char_id))
 
-        # Thưởng dựa trên sát thương gây ra
-        reward_lt = math.floor(dmg_dealt * 0.1) + 100
-        new_lt = char["linh_thach"] + reward_lt
-        new_hammers = char["hammers"] + (1 if (f_boss.current_hp <= 0 or random.uniform(0, 100) < 15) else 0)
-        c.execute("UPDATE characters SET linh_thach = ?, hammers = ? WHERE id = ?", (new_lt, new_hammers, req.char_id))
+@app.post("/api/item_action")
+def item_action(req: ActionReq):
+    row = db.execute(
+        "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+    )
+    if not row:
+        raise HTTPException(404, "Không tìm thấy nhân vật.")
 
-    return {
-        "status": "success",
-        "damage_dealt": dmg_dealt,
-        "boss_remaining_hp": new_boss_hp,
-        "reward_lt": reward_lt,
-        "logs": res["logs"],
-        "attacks_left": 5 - (cnt + 1)
-    }
+    act = req.extra.get(
+        "action"
+    )  # "equip", "unequip", "enhance", "sell_trash", "salvage_high"
+    inv = json.loads(row["inventory"])
+    eq = json.loads(row["equipped_items"])
+    stones = row["stones"]
+    iron = row["iron"]
+    hammers = row["hammers"]
+    msg = ""
 
-# --- CƯỜNG HÓA TRANG BỊ (+20 CỰC HẠN) ---
-@app.post("/api/action/enhance")
-def enhance_equipment(req: EnhanceRequest):
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("SELECT hammers, linh_thach, equipment_json FROM characters WHERE id = ?", (req.char_id,))
-        row = c.fetchone()
-        if not row:
-            raise HTTPException(404, "Không tìm thấy nhân vật!")
-
-        hammers, lt = row["hammers"], row["linh_thach"]
-        equipment = json.loads(row["equipment_json"])
-        item = equipment.get(req.slot_key)
-
+    if act == "equip":
+        uid = req.extra.get("uid")
+        item = next((x for x in inv if x["uid"] == uid), None)
         if not item:
-            raise HTTPException(400, "Vị trí này chưa đeo trang bị!")
-        if hammers < 1 or lt < 250:
-            raise HTTPException(400, "Cần tối thiểu 1 Búa Cường Hóa và 250 Linh Thạch!")
-        if item.get("enhance", 0) >= 20:
-            raise HTTPException(400, "Trang bị đã đạt phẩm cấp Cực Hạn (+20)!")
+            raise HTTPException(404, "Không tìm thấy trang bị trong túi.")
+        slot = item["slot"]
+        if eq.get(slot):
+            inv.append(eq[slot])
+        eq[slot] = item
+        inv = [x for x in inv if x["uid"] != uid]
+        msg = f"Đã trang bị [{item['name']} (+{item.get('level',0)})]!"
+
+    elif act == "unequip":
+        slot = req.extra.get("slot")
+        if eq.get(slot):
+            inv.append(eq[slot])
+            msg = f"Đã tháo [{eq[slot]['name']}] về túi đồ."
+            eq[slot] = None
+
+    elif act == "enhance":
+        # Cường hóa trang bị (+1 đến +20) bằng Thiên Công Thần Chùy + Linh Thiết
+        target_type = req.extra.get("target")  # "equipped" or "inv"
+        slot_or_uid = req.extra.get("key")
+        item = (
+            eq.get(slot_or_uid)
+            if target_type == "equipped"
+            else next((x for x in inv if x["uid"] == slot_or_uid), None)
+        )
+        if not item:
+            raise HTTPException(404, "Không tìm thấy trang bị cần đập búa!")
+        lv = item.get("level", 0)
+        if lv >= 20:
+            raise HTTPException(
+                400, "Trang bị này đã đạt cấp Thần Khí +20 tối đa!"
+            )
+        if hammers < 1:
+            raise HTTPException(400, "Cần 1 Thiên Công Thần Chùy để cường hóa!")
+        iron_cost = 1 + (lv // 5)
+        if iron < iron_cost:
+            raise HTTPException(
+                400,
+                f"Cần {iron_cost} Linh Thiết để rèn cấp này (Tách đồ phẩm B/A"
+                " để lấy Linh Thiết)!",
+            )
 
         hammers -= 1
-        lt -= 250
-        current_lv = item.get("enhance", 0)
-        success = random.uniform(0, 100) <= 75.0
-
-        if success:
-            item["enhance"] = current_lv + 1
-            msg = f"✨ THÀNH CÔNG! {item['name']} thăng hoa lên cấp +{item['enhance']}!"
+        iron -= iron_cost
+        # Mốc tỉ lệ: +1..+5 (100%), +6..+10 (70%), +11..+15 (40% rớt 1 cấp), +16..+20 (15% tụt về +15)
+        if lv < 5:
+            rate = 100
+        elif lv < 10:
+            rate = 70
+        elif lv < 15:
+            rate = 40
         else:
-            if current_lv > 15: item["enhance"] = max(15, current_lv - 1)
-            elif current_lv > 10: item["enhance"] = max(10, current_lv - 1)
-            msg = f"💔 THẤT BẠI! Búa gãy tiêu hao 250 Linh Thạch. Cấp hiện tại: +{item['enhance']}."
+            rate = 15
 
-        equipment[req.slot_key] = item
-        c.execute("UPDATE characters SET hammers = ?, linh_thach = ?, equipment_json = ? WHERE id = ?", (hammers, lt, json.dumps(equipment), req.char_id))
+        if random.uniform(0, 100) <= rate:
+            item["level"] = lv + 1
+            msg = (
+                f"🔨✨ RÈN THÀNH CÔNG! [{item['name']}] tăng lên"
+                f" +{item['level']} (Tỉ lệ {rate}%)!"
+            )
+        else:
+            if lv >= 15:
+                item["level"] = 15
+                msg = (
+                    f"💥 Rèn thất bại ({rate}%)! Nhờ mốc bảo hộ Thần Khí, trang"
+                    " bị giữ ở mức +15."
+                )
+            elif lv >= 10:
+                item["level"] = lv - 1
+                msg = (
+                    f"💥 Rèn thất bại ({rate}%)! [{item['name']}] bị giảm 1 cấp"
+                    f" xuống +{item['level']}."
+                )
+            else:
+                msg = (
+                    f"💨 Rèn thất bại ({rate}%)! May mắn trang bị giữ nguyên"
+                    f" cấp +{lv}."
+                )
 
-    return {"status": "success", "msg": msg, "new_enhance": item["enhance"], "hammers": hammers, "linh_thach": lt}
+    elif act == "sell_trash":
+        # Bán nhanh toàn bộ trang bị phẩm D và C trong túi
+        sold_cnt = 0
+        gained_st = 0
+        rem = []
+        for x in inv:
+            if x.get("rank") in ["D", "C"]:
+                sold_cnt += 1
+                gained_st += 80 if x.get("rank") == "D" else 180
+            else:
+                rem.append(x)
+        inv = rem
+        stones += gained_st
+        msg = (
+            f"💰 Đã bán nhanh {sold_cnt} trang bị phẩm D/C, thu về +{gained_st}"
+            " Linh Thạch!"
+        )
 
-# --- SHOP VẠN BẢO CÁC ---
-SHOP_CATALOG = {
-    "item_dan_mp": {"name": "Cửu Chuyển Hồi Linh Đan", "type": "dan_duoc", "effect": "Hồi phục 35% Max MP", "price": 400},
-    "item_dan_hp": {"name": "Hồi Xuân Chân Đan", "type": "dan_duoc", "effect": "Gia tăng 500 Khí Huyết vĩnh viễn", "price": 800},
-    "item_vk_kiem": {"name": "Thanh Vân Tiên Kiếm (Huyền Phẩm)", "type": "vk2", "stats": {"suc_manh": 120, "lien_kich": 6.0}, "price": 1200},
-    "item_ao_giap": {"name": "Huyền Vũ Hộ Tâm Giáp (Áo)", "type": "ao", "stats": {"thu": 180, "hp": 400}, "price": 1500},
-    "item_nhan_bao": {"name": "Lưu Ly Giới Chỉ (Nhẫn 1)", "type": "nhan1", "stats": {"bao_kich": 8.0, "hut_mau": 5.0}, "price": 1800},
-    "item_nhan_choang": {"name": "U Hồn Nhẫn (Nhẫn 2)", "type": "nhan2", "stats": {"choang": 8.0, "thu": 60}, "price": 1800},
-    "item_nhan_phan": {"name": "Thiên Diệp Giới (Nhẫn 3)", "type": "nhan3", "stats": {"phan_kich": 8.0, "ne_tranh": 5.0}, "price": 1800},
-    "item_bua_ren": {"name": "Thiên Công Thần Chùy (Búa)", "type": "bua", "price": 2000}
-}
+    elif act == "salvage_high":
+        # Tách trang bị phẩm B và A lấy Linh Thiết đập đồ
+        sal_cnt = 0
+        gained_iron = 0
+        rem = []
+        for x in inv:
+            if x.get("rank") in ["B", "A"]:
+                sal_cnt += 1
+                gained_iron += 3 if x.get("rank") == "B" else 7
+            else:
+                rem.append(x)
+        inv = rem
+        iron += gained_iron
+        msg = (
+            f"⚒️ Đã phân giải {sal_cnt} trang bị phẩm B/A, thu về"
+            f" +{gained_iron} Linh Thiết!"
+        )
 
-@app.post("/api/action/buy_item")
-def buy_item(req: BuyRequest):
-    if req.item_id not in SHOP_CATALOG:
-        raise HTTPException(400, "Vật phẩm không tồn tại!")
+    db.execute(
+        """
+        UPDATE characters
+        SET inventory=?, equipped_items=?, stones=?, iron=?, hammers=?
+        WHERE id=?
+    """,
+        (
+            json.dumps(inv),
+            json.dumps(eq),
+            stones,
+            iron,
+            hammers,
+            req.char_id,
+        ),
+    )
 
-    item = SHOP_CATALOG[req.item_id]
-    cost = item["price"]
+    updated = db.execute(
+        "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+    )
+    return {"char": parse_char(updated), "message": msg}
 
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("SELECT linh_thach, hammers, inventory_json, equipment_json FROM characters WHERE id = ?", (req.char_id,))
-        row = c.fetchone()
-        if not row:
-            raise HTTPException(404, "Không tìm thấy nhân vật!")
 
-        lt, hammers = row["linh_thach"], row["hammers"]
-        inv = json.loads(row["inventory_json"])
-        eq = json.loads(row["equipment_json"])
+@app.post("/api/explore")
+def explore(req: ActionReq):
+    row = db.execute(
+        "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+    )
+    if not row:
+        raise HTTPException(404, "Không tìm thấy nhân vật.")
+    char = parse_char(row)
+    zone = req.extra.get("zone")  # "yeu_thu" (5), "bi_canh" (10), "dong_phu" (15)
 
-        if lt < cost:
-            raise HTTPException(400, "Không đủ Linh Thạch!")
+    costs = {"yeu_thu": 5, "bi_canh": 10, "dong_phu": 15}
+    cost = costs.get(zone, 5)
+    if char["stamina"] < cost:
+        raise HTTPException(
+            400,
+            f"Không đủ Thể Lực (Cần {cost} điểm)! Thể lực tự hồi 1 điểm mỗi 1"
+            " phút.",
+        )
 
-        lt -= cost
-        if req.item_id == "item_bua_ren":
+    stam = char["stamina"] - cost
+    stones = row["stones"]
+    hammers = row["hammers"]
+    pity = row["pity_hammer"]
+    pills = json.loads(row["pills"])
+    inv = json.loads(row["inventory"])
+    iron = row["iron"]
+    logs = []
+
+    if zone == "yeu_thu":
+        # Săn Yêu Thú Loạn Tinh Hải: Cày Linh Thạch + Bảo hiểm 50 lượt chắc chắn rơi Búa
+        st_gain = random.randint(150, 350) * (row["realm_idx"] + 1)
+        stones += st_gain
+        pity += 1
+        logs.append(
+            f"🐉 Trảm sát Hải Thú Loạn Tinh Hải (-5 Thể lực): Thu hoạch +{st_gain}"
+            " Linh Thạch."
+        )
+        if pity >= 50 or random.uniform(0, 100) <= 2.0:
             hammers += 1
-            msg = "Đã thu nhận 1 Thiên Công Thần Chùy!"
-        elif item["type"] == "dan_duoc":
-            inv.append({"name": item["name"], "type": "dan_duoc", "price": cost, "desc": item["effect"]})
-            msg = f"Đã cất {item['name']} vào túi trữ vật."
+            pity = 0
+            logs.append(
+                "🔨 [BẢO VẬT XUẤT THẾ] Nhận được +1 Thiên Công Thần Chùy (Reset"
+                " bảo hiểm 0/50)!"
+            )
+
+    elif zone == "bi_canh":
+        # Cổ Ma Bí Cảnh (10 Thể lực): Rơi Thảo dược, Thọ Mệnh Đan, Đan Đột Phá
+        st_gain = random.randint(100, 220)
+        stones += st_gain
+        roll = random.uniform(0, 100)
+        if roll < 30:
+            pills["tho_menh"] = pills.get("tho_menh", 0) + 1
+            logs.append(
+                "🍑 Thám hiểm Cổ Ma Bí Cảnh (-10 Thể lực): Nhặt được 1 [Thọ"
+                f" Mệnh Đan] (+50 năm thọ nguyên) & +{st_gain} LT!"
+            )
+        elif roll < 65:
+            pills["dot_pha"] = pills.get("dot_pha", 0) + 1
+            logs.append(
+                "💊 Thám hiểm Cổ Ma Bí Cảnh (-10 Thể lực): Nhặt được 1 [Đan Đột"
+                f" Phá] (+10% tỉ lệ đột phá) & +{st_gain} LT!"
+            )
         else:
-            slot = item["type"]
-            eq[slot] = {"name": item["name"], "type": slot, "enhance": 0, "stats": item["stats"], "price": cost}
-            msg = f"Đã trang bị [{item['name']}] vào vị trí [{slot}]!"
+            iron += 3
+            logs.append(
+                "🌿 Thám hiểm Cổ Ma Bí Cảnh (-10 Thể lực): Thu thập linh thảo &"
+                f" khoáng thạch (+3 Linh Thiết, +{st_gain} LT)!"
+            )
 
-        c.execute("UPDATE characters SET linh_thach = ?, hammers = ?, inventory_json = ?, equipment_json = ? WHERE id = ?", (lt, hammers, json.dumps(inv), json.dumps(eq), req.char_id))
+    elif zone == "dong_phu":
+        # Thượng Cổ Động Phủ (15 Thể lực): Rơi Trang Bị (Kiếm, Giáp, Nhẫn, Giày...)
+        weights = [25, 25, 18, 15, 10, 4, 3]
+        drop = random.choices(DONG_PHU_DROPS, weights=weights, k=1)[0]
+        new_eq = {
+            "uid": f"dp_{int(time.time()*1000)}_{random.randint(100,999)}",
+            "id": drop["id"],
+            "name": drop["name"],
+            "slot": drop["slot"],
+            "rank": drop["rank"],
+            "level": 0,
+            "atk": drop["atk"],
+            "hp": drop["hp"],
+            "crit": drop["crit"],
+            "dodge": drop["dodge"],
+            "lifesteal": drop["lifesteal"],
+            "dmg_red": drop["dmg_red"],
+            "desc": f"Cổ vật khai quật từ Thượng Cổ Động Phủ (Phẩm {drop['rank']}).",
+        }
+        inv.append(new_eq)
+        logs.append(
+            "🏛️ Khai quật Thượng Cổ Động Phủ (-15 Thể lực): Nhặt được trang bị"
+            f" [{drop['name']}] (Phẩm {drop['rank']})!"
+        )
 
-    return {"status": "success", "msg": msg, "linh_thach": lt, "hammers": hammers}
+    db.execute(
+        """
+        UPDATE characters
+        SET stamina=?, stones=?, hammers=?, pity_hammer=?, pills=?, inventory=?, iron=?
+        WHERE id=?
+    """,
+        (
+            stam,
+            stones,
+            hammers,
+            pity,
+            json.dumps(pills),
+            json.dumps(inv),
+            iron,
+            req.char_id,
+        ),
+    )
 
-@app.post("/api/action/sell_item")
-def sell_item(req: SellRequest):
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("SELECT linh_thach, inventory_json FROM characters WHERE id = ?", (req.char_id,))
-        row = c.fetchone()
-        if not row:
-            raise HTTPException(404, "Không tìm thấy nhân vật!")
+    updated = db.execute(
+        "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+    )
+    return {"char": parse_char(updated), "logs": logs}
 
-        inv = json.loads(row["inventory_json"])
-        if req.inv_index < 0 or req.inv_index >= len(inv):
-            raise HTTPException(400, "Vật phẩm không tồn tại!")
 
-        item = inv.pop(req.inv_index)
-        refund = math.floor(item.get("price", 100) * 0.7)
-        new_lt = row["linh_thach"] + refund
-        c.execute("UPDATE characters SET linh_thach = ?, inventory_json = ? WHERE id = ?", (new_lt, json.dumps(inv), req.char_id))
+# ==========================================
+# 5. BOSS THẾ GIỚI, DEV PANEL & LÔI ĐÀI PVP
+# ==========================================
+@app.get("/api/boss")
+def get_boss():
+    boss = db.execute(
+        "SELECT * FROM world_boss ORDER BY id DESC LIMIT 1", fetchone=True
+    )
+    board = json.loads(boss["damage_board"]) if boss else {}
+    sorted_board = sorted(
+        board.values(), key=lambda x: x["damage"], reverse=True
+    )[:50]
+    return {"boss": boss, "leaderboard": sorted_board}
 
-    return {"status": "success", "msg": f"Đã bán {item['name']}, thu hồi {refund} Linh Thạch.", "linh_thach": new_lt}
 
-@app.delete("/api/action/remove_root")
-def remove_root(char_id: int, root_index: int):
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("SELECT roots_json FROM characters WHERE id = ?", (char_id,))
-        row = c.fetchone()
-        if not row:
-            raise HTTPException(404, "Không tìm thấy nhân vật!")
+@app.post("/api/dev_spawn_boss")
+def dev_spawn_boss(req: DevBossReq):
+    if req.secret != "DevGame":
+        raise HTTPException(403, "Mật lệnh DEV không chính xác!")
+    db.execute(
+        """
+        INSERT INTO world_boss (name, max_hp, hp, atk, def_val, dodge, counter, lifesteal, element, active, damage_board)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, '{}')
+    """,
+        (
+            req.name,
+            req.hp,
+            req.hp,
+            req.atk,
+            req.def_val,
+            req.dodge,
+            req.counter,
+            req.lifesteal,
+            req.element,
+        ),
+    )
+    return get_boss()
 
-        roots = json.loads(row["roots_json"])
-        if root_index < 0 or root_index >= len(roots):
-            raise HTTPException(400, "Vị trí linh căn không hợp lệ!")
 
-        removed = roots.pop(root_index)
-        c.execute("UPDATE characters SET roots_json = ? WHERE id = ?", (json.dumps(roots), char_id))
+@app.post("/api/attack_boss")
+def attack_boss(req: ActionReq):
+    row = db.execute(
+        "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+    )
+    boss = db.execute(
+        "SELECT * FROM world_boss ORDER BY id DESC LIMIT 1", fetchone=True
+    )
+    if not row or not boss:
+        raise HTTPException(404, "Dữ liệu không tồn tại.")
+    if not boss["active"] or boss["hp"] <= 0:
+        raise HTTPException(
+            400, "Boss Thế Giới đã bị tiêu diệt! Hãy chờ DEV triệu hồi Boss mới."
+        )
 
-    return {"status": "success", "msg": f"Đã xóa linh căn [{removed['name']}] khỏi xuất chiến!"}
+    char = parse_char(row)
+    attempts = row["boss_attempts"] if row["boss_id_joined"] == boss["id"] else 0
+    if attempts >= 5:
+        raise HTTPException(
+            400, "Bạn đã dùng hết 5/5 lượt khiêu chiến cho đời Boss này!"
+        )
 
-# --- PVP LÔI ĐÀI ---
-@app.get("/api/pvp/lobby")
-def get_pvp_lobby(exclude_id: int):
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("""
-            SELECT id, name, realm_idx, realm_level, is_dev, stats_json, equipment_json
-            FROM characters WHERE id != ? ORDER BY id DESC LIMIT 20
-        """, (exclude_id,))
-        rows = c.fetchall()
+    c_stats = char["combat_stats"]
+    p_hp = c_stats["hp"]
+    b_hp = boss["hp"]
+    total_dmg = 0
+    logs = []
 
-    res = []
+    # Xét tương khắc Ngũ Hành giữa Linh Căn người chơi và Hệ của Boss
+    elem_mult = 1.0
+    boss_elem = boss.get("element", "Hỏa")
+    for el in char["active_elements"]:
+        if el == "Hỗn Độn" or ELEMENT_COUNTER.get(el) == boss_elem:
+            elem_mult = 1.20
+            break
+        elif ELEMENT_COUNTER.get(boss_elem) == el:
+            elem_mult = 0.85
+
+    if elem_mult > 1.0:
+        logs.append(
+            f"☯️ [NGŨ HÀNH TƯƠNG KHẮC] Linh căn của bạn khắc chế hệ {boss_elem}"
+            " của Boss: +20% Sát thương!"
+        )
+
+    # Giao chiến tối đa 8 hiệp
+    for turn in range(1, 9):
+        if p_hp <= 0 or b_hp <= 0:
+            break
+        # Người chơi tấn công
+        if random.uniform(0, 100) > boss["dodge"]:
+            is_crit = random.uniform(0, 100) <= c_stats["crit"]
+            raw = max(10, c_stats["atk"] - boss["def_val"])
+            dmg = int(raw * (1.8 if is_crit else 1.0) * elem_mult)
+            b_hp -= dmg
+            total_dmg += dmg
+            heal = int(dmg * (c_stats["lifesteal"] / 100.0)) + c_stats["hp_regen"]
+            p_hp = min(c_stats["hp"], p_hp + heal)
+            logs.append(
+                f"Hiệp {turn}: Bạn giáng đòn {'BẠO KÍCH ' if is_crit else ''}gây"
+                f" {dmg} ST lên {boss['name']} (Hồi +{heal} HP)."
+            )
+        else:
+            logs.append(f"Hiệp {turn}: {boss['name']} thân pháp quỷ mị né được đòn!")
+
+        if b_hp <= 0:
+            break
+
+        # Boss phản công
+        if random.uniform(0, 100) > c_stats["dodge"]:
+            b_dmg = int(
+                max(15, boss["atk"] * (1.0 - c_stats["dmg_red"] / 100.0))
+            )
+            p_hp -= b_dmg
+            logs.append(f"👹 {boss['name']} vung trảo gây {b_dmg} sát thương!")
+        else:
+            logs.append(f"💨 Bạn thi triển thân pháp né tránh thành công đòn của Boss!")
+
+    new_b_hp = max(0, b_hp)
+    active = 0 if new_b_hp == 0 else 1
+    board = json.loads(boss["damage_board"])
+    entry = board.get(
+        req.char_id,
+        {"char_id": req.char_id, "name": char["name"], "damage": 0},
+    )
+    entry["damage"] += total_dmg
+    entry["name"] = char["name"]
+    board[req.char_id] = entry
+
+    stones_reward = int(total_dmg * 0.2) + 150
+    new_stones = row["stones"] + stones_reward
+    db.execute(
+        "UPDATE characters SET stones=?, boss_attempts=?, boss_id_joined=?"
+        " WHERE id=?",
+        (new_stones, attempts + 1, boss["id"], req.char_id),
+    )
+
+    # Nếu Boss bị kết liễu -> Phát thưởng Top 10 Danh Hiệu & 10% cơ hội Nhẫn Quỷ cho Top 50
+    if new_b_hp == 0 and boss["active"] == 1:
+        sorted_p = sorted(
+            board.values(), key=lambda x: x["damage"], reverse=True
+        )
+        top10_ids = [x["char_id"] for x in sorted_p[:10]]
+        top50_ids = [x["char_id"] for x in sorted_p[:50]]
+        drop_ghost_ring = random.uniform(0, 100) <= 10.0  # 10% xác suất toàn Top 50
+
+        for cid in top50_ids:
+            c_row = db.execute(
+                "SELECT * FROM characters WHERE id=?", (cid,), fetchone=True
+            )
+            if not c_row:
+                continue
+            c_titles = json.loads(c_row["titles"])
+            c_inv = json.loads(c_row["inventory"])
+            if cid in top10_ids and "Vây Hạ Đại Boss" not in c_titles:
+                c_titles.append("Vây Hạ Đại Boss")
+            if drop_ghost_ring:
+                ring_copy = dict(GHOST_RING_TEMPLATE)
+                ring_copy["uid"] = (
+                    f"ghost_ring_{int(time.time()*1000)}_{random.randint(10,99)}"
+                )
+                c_inv.append(ring_copy)
+            db.execute(
+                "UPDATE characters SET titles=?, inventory=? WHERE id=?",
+                (json.dumps(c_titles), json.dumps(c_inv), cid),
+            )
+
+        logs.append(
+            "🏆 [BOSS THẾ GIỚI ĐÃ BỊ TIÊU DIỆT] Top 10 BXH nhận danh hiệu [Vây"
+            " Hạ Đại Boss] (+10% Né vượt trần)!"
+        )
+        if drop_ghost_ring:
+            logs.append(
+                "💍🔥 [THẦN KHÍ GIÁNG THẾ - 10% NỔ] Toàn bộ Top 50 BXH sát"
+                " thương đã nhận được [Nhẫn Quỷ]!"
+            )
+        else:
+            logs.append(
+                "💨 Lần này sát khí tan biến, Nhẫn Quỷ (10% tỉ lệ) đã không"
+                " xuất hiện."
+            )
+
+    db.execute(
+        "UPDATE world_boss SET hp=?, active=?, damage_board=? WHERE id=?",
+        (new_b_hp, active, json.dumps(board), boss["id"]),
+    )
+
+    updated_char = db.execute(
+        "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+    )
+    return {
+        "char": parse_char(updated_char),
+        "boss_data": get_boss(),
+        "logs": logs,
+    }
+
+
+@app.get("/api/arena_list/{char_id}")
+def arena_list(char_id: str):
+    rows = db.execute(
+        "SELECT * FROM characters WHERE id != ? LIMIT 30",
+        (char_id,),
+        fetchall=True,
+    )
+    opponents = []
     for r in rows:
-        tot_st = calculate_total_stats(json.loads(r["stats_json"]), json.loads(r["equipment_json"]) if r["equipment_json"] else DEFAULT_EQUIPMENT)
-        res.append({
-            "id": r["id"], "name": r["name"],
-            "realm": get_full_realm_title(r["realm_idx"], r["realm_level"]),
-            "is_dev": bool(r["is_dev"]), "hp": tot_st.get("hp", 100), "speed": tot_st.get("toc_do", 100)
+        c = parse_char(r)
+        opponents.append({
+            "id": c["id"],
+            "name": c["name"],
+            "realm_name": c["realm_name"],
+            "power": c["combat_stats"]["power"],
+            "equipped_title": c["equipped_title"],
         })
-    return {"opponents": res}
+    opponents.sort(key=lambda x: x["power"], reverse=True)
+    return {"opponents": opponents[:15]}
 
-@app.post("/api/pvp/challenge")
-def challenge_opponent(req: ChallengeRequest):
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("SELECT id, name, stats_json, equipment_json FROM characters WHERE id = ?", (req.challenger_char_id,))
-        c1 = c.fetchone()
-        c.execute("SELECT id, name, stats_json, equipment_json FROM characters WHERE id = ?", (req.target_char_id,))
-        c2 = c.fetchone()
 
-    if not c1 or not c2:
-        raise HTTPException(404, "Đối thủ không tồn tại!")
+@app.post("/api/arena_fight")
+def arena_fight(req: ActionReq):
+    p_row = db.execute(
+        "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+    )
+    e_id = req.extra.get("target_id")
+    e_row = db.execute(
+        "SELECT * FROM characters WHERE id=?", (e_id,), fetchone=True
+    )
+    if not p_row or not e_row:
+        raise HTTPException(404, "Không tìm thấy đối thủ.")
 
-    tot1 = calculate_total_stats(json.loads(c1["stats_json"]), json.loads(c1["equipment_json"]) if c1["equipment_json"] else DEFAULT_EQUIPMENT)
-    tot2 = calculate_total_stats(json.loads(c2["stats_json"]), json.loads(c2["equipment_json"]) if c2["equipment_json"] else DEFAULT_EQUIPMENT)
+    p = parse_char(p_row)
+    e = parse_char(e_row)
+    ps, es = p["combat_stats"], e["combat_stats"]
+    p_hp, e_hp = ps["hp"], es["hp"]
+    logs = [f"⚔️ Giao chiến Lôi Đài: [{p['name']}] VS [{e['name']}]!"]
 
-    f1 = Fighter(c1["name"], tot1)
-    f2 = Fighter(c2["name"], tot2)
-    return simulate_battle(f1, f2)
+    for turn in range(1, 10):
+        if p_hp <= 0 or e_hp <= 0:
+            break
+        if random.uniform(0, 100) > es["dodge"]:
+            dmg = int(max(10, ps["atk"] * (1.0 - es["dmg_red"] / 100.0)))
+            e_hp -= dmg
+            logs.append(f"Hiệp {turn}: Bạn tung chiêu gây {dmg} ST lên {e['name']}.")
+        else:
+            logs.append(f"Hiệp {turn}: {e['name']} né được đòn của bạn!")
 
-@app.post("/api/characters/delete")
-def delete_character(req: DeleteCharRequest):
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("SELECT id, name FROM characters WHERE telegram_id = ? AND slot_index = ?", (str(req.telegram_id), req.slot_index))
-        row = c.fetchone()
-        if not row:
-            raise HTTPException(404, "Không tìm thấy nhân vật!")
-        if row["name"].strip() != req.confirm_name.strip():
-            raise HTTPException(400, "Tên xác nhận không khớp!")
-        c.execute("DELETE FROM characters WHERE id = ?", (row["id"],))
+        if e_hp <= 0:
+            break
 
-    return {"status": "success"}
+        if random.uniform(0, 100) > ps["dodge"]:
+            edmg = int(max(10, es["atk"] * (1.0 - ps["dmg_red"] / 100.0)))
+            p_hp -= edmg
+            logs.append(f"Hiệp {turn}: {e['name']} phản kích gây {edmg} ST.")
+        else:
+            logs.append(f"Hiệp {turn}: Bạn né được đòn tấn công của {e['name']}!")
 
+    win = p_hp >= e_hp
+    reward = 250 if win else 60
+    db.execute(
+        "UPDATE characters SET stones = stones + ? WHERE id=?",
+        (reward, req.char_id),
+    )
+    logs.append(
+        f"🏁 Kết quả: {'CHIẾN THẮNG' if win else 'THẤT BẠI'}! Nhận +{reward} Linh"
+        " Thạch."
+    )
+    updated = db.execute(
+        "SELECT * FROM characters WHERE id=?", (req.char_id,), fetchone=True
+    )
+    return {"char": parse_char(updated), "win": win, "logs": logs}
+
+
+# ==========================================
+# 6. PHỤC VỤ GIAO DIỆN FRONTEND
+# ==========================================
 os.makedirs("static", exist_ok=True)
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+@app.get("/")
+def serve_index():
+    return FileResponse("static/index.html")
