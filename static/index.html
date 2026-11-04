@@ -1,868 +1,594 @@
 <!DOCTYPE html>
 <html lang="vi">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Phàm Nhân Tu Tiên - Mini App 2.0</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <style>
-        body { background-color: #060913; color: #cbd5e1; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        .custom-scroll::-webkit-scrollbar { width: 3px; }
-        .custom-scroll::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
-        .tier-D { color: #94a3b8; }
-        .tier-C { color: #22c55e; }
-        .tier-B { color: #38bdf8; }
-        .tier-A { color: #c084fc; }
-        .tier-S { color: #f97316; }
-        .tier-SS { color: #ef4444; }
-        .tier-SSS { color: #eab308; text-shadow: 0 0 8px rgba(234,179,8,0.6); }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Phàm Nhân Tu Tiên - Luân Hồi Điện</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      --bg: #0b0e14;
+      --card: #151a24;
+      --border: #2a3447;
+      --gold: #f5c451;
+      --cyan: #38bdf8;
+      --green: #22c55e;
+      --red: #ef4444;
+      --purple: #c084fc;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: var(--bg); color: var(--text); padding-bottom: 78px; user-select: none; -webkit-tap-highlight-color: transparent; }
+
+    /* Header & Account Bar */
+    .topbar {
+      position: sticky; top: 0; z-index: 50;
+      background: rgba(15, 20, 30, 0.96); border-bottom: 1px solid var(--border);
+      padding: 10px 12px; display: flex; justify-content: space-between; align-items: center;
+    }
+    .brand { font-weight: 800; color: var(--gold); font-size: 15px; letter-spacing: 0.4px; }
+    .acc-box { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+    .btn-sm {
+      background: #1e293b; color: var(--text); border: 1px solid var(--border);
+      padding: 5px 9px; border-radius: 6px; font-size: 11px; cursor: pointer; font-weight: 600;
+    }
+    .btn-sm.danger { border-color: var(--red); color: #fca5a5; }
+    .btn-sm.gold { border-color: var(--gold); color: var(--gold); }
+
+    .container { padding: 12px; max-width: 520px; margin: 0 auto; }
+    .card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 12px; margin-bottom: 12px;
+    }
+    .card-title {
+      font-size: 14px; font-weight: 700; color: var(--gold);
+      margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;
+    }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .stat-pill {
+      background: #0f131c; border: 1px solid #222b3a; border-radius: 8px;
+      padding: 7px 9px; font-size: 12px; display: flex; justify-content: space-between;
+    }
+    .stat-pill b { color: var(--cyan); }
+
+    .btn {
+      width: 100%; padding: 10px 12px; border-radius: 8px; border: none;
+      font-weight: 700; font-size: 13px; cursor: pointer; transition: 0.15s;
+      background: linear-gradient(135deg, #d97706, #f59e0b); color: #090d16;
+    }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-cyan { background: linear-gradient(135deg, #0284c7, #38bdf8); color: #fff; }
+    .btn-purple { background: linear-gradient(135deg, #7e22ce, #c084fc); color: #fff; }
+    .btn-green { background: linear-gradient(135deg, #15803d, #22c55e); color: #fff; }
+    .btn-red { background: linear-gradient(135deg, #b91c1c, #ef4444); color: #fff; }
+
+    /* Progress Bar */
+    .prog-wrap { width: 100%; height: 14px; background: #090c12; border-radius: 99px; overflow: hidden; border: 1px solid var(--border); margin: 6px 0; position: relative; }
+    .prog-bar { height: 100%; background: linear-gradient(90deg, #0284c7, #38bdf8); transition: width 0.2s; }
+    .prog-text { position: absolute; inset: 0; font-size: 10px; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; }
+
+    /* Log Box + Nút xóa nhật ký góc nhỏ */
+    .log-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .log-box {
+      height: 175px; overflow-y: auto; background: #080a0f; border: 1px solid #1e2636;
+      border-radius: 8px; padding: 8px; font-size: 12px; line-height: 1.5;
+    }
+    .log-item { margin-bottom: 5px; border-bottom: 1px dashed #19202e; padding-bottom: 3px; }
+
+    /* Bottom Navigation */
+    .bottom-nav {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 60;
+      background: #0f141e; border-top: 1px solid var(--border);
+      display: grid; grid-template-columns: repeat(6, 1fr); padding: 6px 4px;
+    }
+    .nav-btn {
+      background: none; border: none; color: var(--muted); font-size: 11px;
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      padding: 4px 2px; cursor: pointer; font-weight: 600;
+    }
+    .nav-btn.active { color: var(--gold); }
+    .nav-btn.locked { opacity: 0.3; pointer-events: none; }
+
+    /* Modal Popup + Nút [X] */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.78);
+      z-index: 100; display: none; align-items: center; justify-content: center; padding: 16px;
+    }
+    .modal-box {
+      background: #151b26; border: 1px solid var(--gold); border-radius: 12px;
+      max-width: 420px; width: 100%; padding: 14px; position: relative;
+    }
+    .modal-close {
+      position: absolute; top: 10px; right: 12px; background: #263042;
+      color: #fff; border: none; width: 26px; height: 26px; border-radius: 50%;
+      font-weight: 800; cursor: pointer;
+    }
+    .badge {
+      display: inline-block; padding: 2px 7px; border-radius: 5px; font-size: 11px;
+      font-weight: 700; background: #1e293b; border: 1px solid var(--border); cursor: pointer;
+    }
+    .rank-SSS { color: #f43f5e; border-color: #f43f5e; }
+    .rank-SS { color: #c084fc; border-color: #c084fc; }
+    .rank-S { color: #f59e0b; border-color: #f59e0b; }
+    .rank-A { color: #38bdf8; border-color: #38bdf8; }
+    .rank-B { color: #22c55e; border-color: #22c55e; }
+    input, select {
+      width: 100%; padding: 8px 10px; background: #0b0e14; border: 1px solid var(--border);
+      color: var(--text); border-radius: 7px; font-size: 13px; margin-bottom: 8px;
+    }
+  </style>
 </head>
-<body class="h-[100dvh] flex flex-col justify-between select-none overflow-hidden">
+<body>
 
-    <!-- HEADER STATUS BAR -->
-    <header class="p-2.5 bg-slate-950/95 border-b border-slate-800 flex justify-between items-center sticky top-0 z-30">
-        <div onclick="switchTab('tab-slots'); loadSlots();" class="cursor-pointer">
-            <h1 class="text-amber-500 font-black text-xs flex items-center gap-1 tracking-wider">
-                <i class="fa-solid fa-dragon"></i> PHÀM NHÂN TU TIÊN
-            </h1>
-            <p id="header-char-info" class="text-[10px] text-slate-400">Luân Hồi Điện (Đổi Slot)</p>
-        </div>
-        <div class="flex items-center gap-1.5">
-            <div class="flex items-center gap-1 text-[11px] bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
-                <span class="text-amber-400 font-bold" id="header-lt">💎 0</span>
-                <span class="text-slate-300 ml-1 font-bold" id="header-hammers">🔨 0</span>
-            </div>
-            <button onclick="openDevModal()" class="px-2 py-0.5 bg-rose-950 text-rose-300 border border-rose-800 rounded text-[10px] font-bold">
-                DEV
-            </button>
-        </div>
-    </header>
+  <!-- Thanh Trạng Thái + Nút Đăng Xuất Đổi Tài Khoản -->
+  <div class="topbar">
+    <div class="brand">☯️ PHÀM NHÂN TU TIÊN</div>
+    <div class="acc-box">
+      <span id="lblAccount" style="color:var(--cyan);">ID: ...</span>
+      <button class="btn-sm gold" onclick="openDevModal()">DEV</button>
+      <button class="btn-sm danger" onclick="logoutAccount()">Đăng xuất</button>
+    </div>
+  </div>
 
-    <!-- THANH TIẾN ĐỘ TU LUYỆN (%) GÓC TRÊN -->
-    <div class="bg-slate-900 px-3 py-1.5 border-b border-slate-800 flex items-center justify-between text-[11px]">
-        <div class="flex items-center gap-1.5">
-            <span class="text-amber-400 font-bold" id="bar-realm">Phàm Nhân Cấp 1</span>
-            <span class="text-[9px] px-1 bg-amber-950 text-amber-300 rounded font-semibold" id="bar-stage">Sơ Kỳ</span>
+  <div class="container">
+    <!-- TAB 0: LUÂN HỒI ĐIỆN (CHỌN SLOT / TẠO NHÂN VẬT) -->
+    <div id="tab-slots" class="tab-pane">
+      <div class="card">
+        <div class="card-title">
+          <span>🏛️ Luân Hồi Điện (Chọn Nhân Vật)</span>
+          <span style="font-size:11px; color:var(--muted);">Cloud Turso Vĩnh Viễn</span>
         </div>
-        <div class="w-32 flex flex-col items-end">
-            <div class="flex justify-between w-full text-[9px] text-slate-400 mb-0.5">
-                <span>Tu Vi:</span>
-                <span id="bar-exp-text">0/100 (0%)</span>
-            </div>
-            <div class="w-full bg-slate-950 h-1.5 rounded-full overflow-hidden border border-slate-800">
-                <div id="bar-exp-fill" class="bg-gradient-to-r from-amber-600 to-yellow-400 h-full w-0 transition-all duration-300"></div>
-            </div>
+        <p style="font-size:12px; color:var(--muted); margin-bottom:10px;">
+          * Phải chọn hoặc khởi tạo 1 nhân vật trước khi mở khóa các mục Tu Hành, Lịch Luyện, Tiên Thân, Bảo Các, Lôi Đài.
+        </p>
+        <div id="slotsContainer"></div>
+      </div>
+
+      <!-- Khung Tạo Nhân Vật Mới -->
+      <div id="createCharCard" class="card" style="display:none;">
+        <div class="card-title">
+          <span id="createSlotTitle">✨ Khởi Tạo Nhân Vật</span>
+          <button class="btn-sm danger" onclick="document.getElementById('createCharCard').style.display='none'">Đóng</button>
         </div>
+        <input type="text" id="inpCharName" placeholder="Nhập đạo hiệu (VD: Hàn Lập)..." maxlength="18" />
+        <select id="inpGender">
+          <option value="Nam">Nam Tu</option>
+          <option value="Nữ">Nữ Tu</option>
+        </select>
+        <div style="font-size:12px; color:var(--gold); margin:6px 0;">
+          Điểm Tiên Căn Khởi Đầu: <b id="lblCreatePts">30</b> điểm
+        </div>
+        <div id="createStatsList"></div>
+        <button class="btn" style="margin-top:10px;" onclick="submitCreateChar()">Bước Vào Tiên Giới</button>
+      </div>
     </div>
 
-    <!-- VIEWPORT NỘI DUNG CHÍNH -->
-    <main class="flex-1 overflow-y-auto p-3 custom-scroll" id="main-content">
-        
-        <!-- MÀN HÌNH 0: CHỌN 5 SLOT NHÂN VẬT -->
-        <div id="tab-slots" class="space-y-3">
-            <div class="flex justify-between items-center">
-                <h2 class="text-xs font-bold text-amber-400 uppercase tracking-wider">Luân Hồi Điện (5 Slot)</h2>
-                <span class="text-[10px] text-slate-500">Khởi đầu từ 1 tuổi</span>
-            </div>
-            <div id="slots-container" class="space-y-2"></div>
+    <!-- TAB 1: TU HÀNH (COOLDOWN 0.5S, AUTO BẾ QUAN, BÌNH CẢNH, NIẾT BÀN 500T) -->
+    <div id="tab-cultivate" class="tab-pane" style="display:none;">
+      <div class="card">
+        <div class="card-title">
+          <span id="cNameTitle">Đạo Hữu</span>
+          <span id="cRealmBadge" class="badge rank-S">Phàm Nhân</span>
+        </div>
+        <div class="grid-2" style="margin-bottom:8px;">
+          <div class="stat-pill"><span>Tuổi thọ:</span> <b id="cAge">16 / 100</b></div>
+          <div class="stat-pill"><span>Linh thạch:</span> <b id="cStones">0 💎</b></div>
+          <div class="stat-pill"><span>Lực chiến:</span> <b id="cPower">0 ⚔️</b></div>
+          <div class="stat-pill"><span>Thể lực:</span> <b id="cStamina">50/50 ⚡</b></div>
         </div>
 
-        <!-- TAB 1: TU HÀNH & CỐT TRUYỆN MÔ PHỎNG -->
-        <div id="tab-tuhan" class="hidden space-y-3">
-            <div class="bg-gradient-to-r from-slate-900 via-amber-950/20 to-slate-900 p-3 rounded-xl border border-amber-600/30">
-                <div class="flex justify-between items-center mb-1">
-                    <span class="text-xs text-amber-400 font-bold" id="story-char-name">Đạo Hữu</span>
-                    <span class="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full font-bold" id="story-realm">Phàm Nhân</span>
-                </div>
-                <div class="flex justify-between text-[11px] text-slate-300 mt-2">
-                    <p>Thọ Nguyên: <span id="story-age" class="text-amber-400 font-bold">1</span> / <span id="story-max-age" class="text-slate-400">100</span> Tuổi</p>
-                    <p id="story-destiny-badge" class="text-purple-400 font-bold">Chí Tôn Cốt</p>
-                </div>
-                <div class="flex justify-between items-center text-[10px] text-slate-400 mt-2 border-t border-slate-800/80 pt-1.5">
-                    <span>Niết Bàn: <b id="story-rebirth" class="text-rose-400">0</b> Lần</span>
-                    <button onclick="doRebirth()" class="px-2 py-0.5 bg-rose-950 text-rose-300 border border-rose-800 rounded font-bold hover:bg-rose-900">
-                        🔄 Niết Bàn Trùng Sinh (+10đ)
-                    </button>
-                </div>
-            </div>
-
-            <!-- Khung Linh Căn Xuất Chiến -->
-            <div class="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800">
-                <div class="flex justify-between items-center mb-1.5">
-                    <h3 class="text-[11px] font-bold text-amber-400 uppercase"><i class="fa-solid fa-seedling"></i> Linh Căn Xuất Chiến (<span id="roots-count">0</span>/7)</h3>
-                    <button onclick="gachaRoot()" class="px-2 py-0.5 bg-amber-600 text-slate-950 rounded text-[10px] font-bold">
-                        Quay Mới (1,000 💎)
-                    </button>
-                </div>
-                <div id="roots-list" class="grid grid-cols-2 gap-1.5 text-[10px]"></div>
-            </div>
-
-            <!-- Nhật Ký Tu Tiên & Nút 10s Cooldown -->
-            <div class="p-3 bg-slate-900/90 rounded-xl border border-slate-800 space-y-2">
-                <h3 class="text-xs font-bold text-slate-300 uppercase"><i class="fa-solid fa-scroll text-amber-500"></i> Nhật Ký Tu Tiên</h3>
-                <div id="story-log-box" class="h-44 overflow-y-auto bg-slate-950 p-2.5 rounded text-[11px] font-mono space-y-1.5 text-slate-300 border border-slate-900 custom-scroll">
-                    <p class="text-slate-500">Bấm 'Tu Luyện 1 Năm' để qua năm, trưởng thành và tìm kiếm cơ duyên...</p>
-                </div>
-                <button id="btn-story-step" onclick="doStoryStep()" class="w-full py-2.5 bg-gradient-to-r from-amber-600 to-yellow-600 text-slate-950 font-black text-xs rounded-lg active:scale-95 transition shadow-lg disabled:opacity-50 disabled:cursor-not-allowed">
-                    ⏳ TU LUYỆN 1 NĂM (10S COOLDOWN)
-                </button>
-            </div>
+        <div style="font-size:12px; display:flex; justify-content:space-between;">
+          <span>Tu Vi Cảnh Giới:</span>
+          <span id="cBottleBonus" style="color:var(--green);"></span>
+        </div>
+        <div class="prog-wrap">
+          <div id="cExpBar" class="prog-bar" style="width:0%"></div>
+          <div id="cExpText" class="prog-text">0 / 100</div>
         </div>
 
-        <!-- TAB 2: LỊCH LUYỆN (BOSS ĐƠN & BOSS THẾ GIỚI) -->
-        <div id="tab-lichluyen" class="hidden space-y-3">
-            <!-- Boss Thế Giới (Toàn Server) -->
-            <div class="p-3 bg-slate-900/90 rounded-xl border border-amber-600/50 space-y-2">
-                <div class="flex justify-between items-center">
-                    <h3 class="text-xs font-bold text-amber-400 uppercase"><i class="fa-solid fa-fire text-amber-500"></i> Boss Thế Giới (Toàn Server)</h3>
-                    <span class="text-[10px] text-amber-300" id="wb-attacks-left">Lượt: 5/5</span>
-                </div>
-                <div id="wb-info-box" class="p-2 bg-slate-950 rounded text-xs space-y-1 border border-slate-800">
-                    <p class="text-slate-400">Đang quét thần thức tìm kiếm Ma Đầu...</p>
-                </div>
-                <div class="flex gap-2">
-                    <button id="btn-attack-wb" onclick="attackWorldBoss()" class="flex-1 py-2 bg-amber-600 hover:bg-amber-500 text-slate-950 font-black text-xs rounded-lg active:scale-95 transition">
-                        ⚡ LIÊN THỦ VÂY TRẢM
-                    </button>
-                    <button id="btn-dev-spawn-wb" onclick="openSpawnBossModal()" class="hidden px-3 py-2 bg-rose-900 text-rose-300 border border-rose-700 font-bold text-xs rounded-lg">
-                        Spam Boss (DEV)
-                    </button>
-                </div>
-            </div>
-
-            <!-- Boss Đơn Loạn Tinh Hải -->
-            <div class="p-3 bg-slate-900/90 rounded-xl border border-rose-900/40 space-y-2">
-                <div class="flex justify-between items-center">
-                    <h3 class="text-xs font-bold text-rose-400 uppercase"><i class="fa-solid fa-skull text-rose-500"></i> Yêu Thú Loạn Tinh Hải</h3>
-                    <span class="text-[10px] text-amber-400" id="boss-pity-text">Bảo hiểm Búa: 0/80</span>
-                </div>
-                <p class="text-[11px] text-slate-400">Trảm sát Boss tỉ lệ rơi búa cường hóa 1% (+ Khí Vận). Sau 80 lần chắc chắn nhận 1 Búa.</p>
-                <div id="boss-result-box" class="p-2 bg-slate-950 rounded text-xs text-amber-300 min-h-[40px] border border-slate-800 flex items-center justify-center text-center">
-                    Sẵn sàng săn Boss Yêu Thú...
-                </div>
-                <button onclick="doHuntBoss()" class="w-full py-2 bg-rose-700 hover:bg-rose-600 text-white font-black text-xs rounded-lg active:scale-95 transition shadow-lg">
-                    ⚔️ TRẢM SÁT YÊU VƯƠNG
-                </button>
-            </div>
+        <!-- Nút Tu Luyện 0.5s + Bế Quan Tự Động -->
+        <div class="grid-2" style="margin-top:10px;">
+          <button id="btnCultivate" class="btn" onclick="doCultivate()">🧘 Tu Luyện 1 Năm (0.5s)</button>
+          <button id="btnAutoCult" class="btn btn-cyan" onclick="toggleAutoCultivate()">🔄 Bế Quan Tự Động: TẮT</button>
         </div>
 
-        <!-- TAB 3: TIÊN THÂN (5 THUỘC TÍNH, TRANG BỊ & TÚI ĐỒ) -->
-        <div id="tab-tienthan" class="hidden space-y-3">
-            <!-- 5 Thuộc Tính Gốc & Điểm Tiềm Năng Tự Do -->
-            <div class="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800 space-y-2">
-                <div class="flex justify-between items-center">
-                    <h3 class="text-[11px] font-bold text-amber-400 uppercase">5 Thuộc Tính Tiên Căn</h3>
-                    <span class="text-[11px] text-amber-300 font-bold">Điểm Tự Do: <span id="stat-free-points">0</span></span>
-                </div>
-                <div class="grid grid-cols-2 gap-2 text-[11px]" id="five-stats-container"></div>
-            </div>
+        <!-- Nút Đột Phá Bình Cảnh + Độ Kiếp -->
+        <button id="btnBreakthrough" class="btn btn-green" style="margin-top:8px; display:none;" onclick="doBreakthrough()">
+          ⚡ Đột Phá Cảnh Giới & Độ Lôi Kiếp (Cơ bản 80% + Đan)
+        </button>
 
-            <!-- 9 Vị Trí Trang Bị -->
-            <div class="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800">
-                <h3 class="text-[11px] font-bold text-amber-400 uppercase mb-2"><i class="fa-solid fa-shield-halved"></i> 9 Vị Trí Pháp Bảo Trang Bị</h3>
-                <div class="grid grid-cols-3 gap-1.5" id="equipment-grid"></div>
-            </div>
+        <!-- Nút Niết Bàn Trùng Sinh (500 tuổi) -->
+        <button id="btnRebirth" class="btn btn-purple" style="margin-top:8px;" onclick="doRebirth()">
+          🔥 Niết Bàn Trùng Sinh (500t đc phép niết bàn trùng sinh)
+        </button>
+      </div>
 
-            <!-- Thuộc tính chiến đấu tổng hợp -->
-            <div class="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800">
-                <h3 class="text-[11px] font-bold text-slate-300 uppercase mb-1.5">Thuộc Tính Toàn Diện</h3>
-                <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]" id="stats-display"></div>
-            </div>
-
-            <!-- Túi Đồ -->
-            <div class="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800 space-y-2">
-                <div class="flex justify-between items-center">
-                    <h3 class="text-[11px] font-bold text-amber-400 uppercase"><i class="fa-solid fa-box-archive"></i> Túi Trữ Vật (<span id="inv-count">0</span>/500)</h3>
-                    <span class="text-[9px] text-slate-500">Bán hoàn 70% Linh Thạch</span>
-                </div>
-                <div id="inventory-list" class="space-y-1.5 max-h-40 overflow-y-auto custom-scroll"></div>
-            </div>
+      <!-- Bảng 1: 5 Thuộc Tính Gốc (CHỈ HIỆN SAU KHI NIẾT BÀN TRÙNG SINH) -->
+      <div id="cardBaseStatsRebirth" class="card" style="display:none; border-color:var(--purple);">
+        <div class="card-title">
+          <span>🌌 Phân Bổ 5 Thuộc Tính Gốc (Sau Niết Bàn)</span>
+          <span>Điểm tiềm năng: <b id="lblRebirthPot" style="color:var(--cyan);">0</b></span>
         </div>
-
-        <!-- TAB 4: VẠN BẢO CÁC (SHOP) -->
-        <div id="tab-shop" class="hidden space-y-2">
-            <h2 class="text-xs font-bold text-amber-400 uppercase tracking-wider mb-1">Vạn Bảo Các (Thương Hội)</h2>
-            <div class="space-y-2">
-                <div class="p-2.5 bg-slate-900 rounded-lg border border-slate-800 flex justify-between items-center">
-                    <div>
-                        <p class="text-xs font-bold text-amber-400">🌱 Tẩy Tủy Dịch (Gacha Linh Căn)</p>
-                        <p class="text-[10px] text-slate-400">Random ngẫu nhiên 1 Linh Căn từ D đến SSS</p>
-                    </div>
-                    <button onclick="gachaRoot()" class="px-2.5 py-1 bg-amber-600 text-slate-950 font-bold text-[11px] rounded">1,000 💎</button>
-                </div>
-                <div class="p-2.5 bg-slate-900 rounded-lg border border-slate-800 flex justify-between items-center">
-                    <div>
-                        <p class="text-xs font-bold text-slate-200">🧪 Cửu Chuyển Hồi Linh Đan</p>
-                        <p class="text-[10px] text-slate-400">Hồi ngay 35% Max MP trong trận</p>
-                    </div>
-                    <button onclick="buyShopItem('item_dan_mp')" class="px-2.5 py-1 bg-amber-600 text-slate-950 font-bold text-[11px] rounded">400 💎</button>
-                </div>
-                <div class="p-2.5 bg-slate-900 rounded-lg border border-slate-800 flex justify-between items-center">
-                    <div>
-                        <p class="text-xs font-bold text-slate-200">💊 Hồi Xuân Chân Đan</p>
-                        <p class="text-[10px] text-slate-400">+500 Khí Huyết vĩnh viễn</p>
-                    </div>
-                    <button onclick="buyShopItem('item_dan_hp')" class="px-2.5 py-1 bg-amber-600 text-slate-950 font-bold text-[11px] rounded">800 💎</button>
-                </div>
-                <div class="p-2.5 bg-slate-900 rounded-lg border border-slate-800 flex justify-between items-center">
-                    <div>
-                        <p class="text-xs font-bold text-slate-200">⚔️ Thanh Vân Tiên Kiếm (Vũ Khí 2)</p>
-                        <p class="text-[10px] text-slate-400">+120 Sức Mạnh, +6% Liên Kích</p>
-                    </div>
-                    <button onclick="buyShopItem('item_vk_kiem')" class="px-2.5 py-1 bg-amber-600 text-slate-950 font-bold text-[11px] rounded">1,200 💎</button>
-                </div>
-                <div class="p-2.5 bg-slate-900 rounded-lg border border-slate-800 flex justify-between items-center">
-                    <div>
-                        <p class="text-xs font-bold text-slate-200">🥋 Huyền Vũ Hộ Tâm Giáp (Áo)</p>
-                        <p class="text-[10px] text-slate-400">+180 Giáp, +400 Máu</p>
-                    </div>
-                    <button onclick="buyShopItem('item_ao_giap')" class="px-2.5 py-1 bg-amber-600 text-slate-950 font-bold text-[11px] rounded">1,500 💎</button>
-                </div>
-                <div class="p-2.5 bg-slate-900 rounded-lg border border-slate-800 flex justify-between items-center">
-                    <div>
-                        <p class="text-xs font-bold text-amber-400">🔨 Thiên Công Thần Chùy (Búa)</p>
-                        <p class="text-[10px] text-slate-400">Cường hóa trang bị tối đa +20 (75%)</p>
-                    </div>
-                    <button onclick="buyShopItem('item_bua_ren')" class="px-2.5 py-1 bg-amber-600 text-slate-950 font-bold text-[11px] rounded">2,000 💎</button>
-                </div>
-            </div>
+        <p style="font-size:11px; color:var(--muted); margin-bottom:8px;">
+          * Bảng này chỉ mở sau khi Niết Bàn. Bấm [Tẩy Tủy Reset] để gom toàn bộ điểm đã cộng từ các kiếp trước về cộng lại!
+        </p>
+        <div id="rebirthBaseList"></div>
+        <div class="grid-2" style="margin-top:8px;">
+          <button class="btn-sm danger" style="padding:8px;" onclick="resetBaseStats()">♻️ Reset Cộng Lại Từ Đầu</button>
+          <button class="btn-sm gold" style="padding:8px;" onclick="lockBaseStats()">✅ Hoàn Tất & Khóa Bảng</button>
         </div>
+      </div>
 
-        <!-- TAB 5: ĐẠI ĐẠO LÔI ĐÀI (PVP) -->
-        <div id="tab-pvp" class="hidden space-y-3">
-            <div class="flex justify-between items-center">
-                <h3 class="font-bold text-slate-200 text-xs uppercase"><i class="fa-solid fa-swords text-amber-500"></i> Tu Sĩ Đang Online</h3>
-                <button onclick="loadPvPLobby()" class="text-xs text-amber-500"><i class="fa-solid fa-rotate"></i> Làm mới</button>
-            </div>
-            <div id="pvp-list" class="space-y-2"></div>
+      <!-- Bảng 2: Cột Năng Lực Hàng Năm (+10 điểm / năm tuổi) -->
+      <div class="card">
+        <div class="card-title">
+          <span>💪 Cột Năng Lực (+10 điểm / năm tuổi)</span>
+          <span>Điểm năng lực: <b id="lblAbilityPts" style="color:var(--green);">0</b></span>
         </div>
-    </main>
+        <div id="abilityList"></div>
+      </div>
 
-    <!-- MODAL KHỞI TẠO NHÂN VẬT (5 THUỘC TÍNH) -->
-    <div id="create-modal" class="hidden fixed inset-0 bg-black/90 flex items-center justify-center p-3 z-50">
-        <div class="bg-slate-900 border border-amber-600/70 w-full max-w-sm rounded-xl p-4 space-y-3 text-xs">
-            <div class="flex justify-between items-center border-b border-slate-800 pb-2">
-                <h3 class="font-bold text-amber-400 uppercase">Khởi Sinh Kiếp Tu Tiên (1 Tuổi)</h3>
-                <button onclick="closeCreateModal()" class="text-slate-400 text-sm"><i class="fa-solid fa-xmark"></i></button>
-            </div>
+      <!-- Nhật Ký Tu Tiên + Nút Xóa Nhật Ký Góc Nhỏ -->
+      <div class="card">
+        <div class="log-header">
+          <span style="font-size:13px; font-weight:700; color:var(--gold);">📜 Nhật Ký Tu Tiên</span>
+          <button class="btn-sm danger" onclick="clearLogs()" title="Xóa sạch nhật ký">🗑️ Xóa nhật ký</button>
+        </div>
+        <div id="logBox" class="log-box"></div>
+      </div>
+    </div>
 
+    <!-- TAB 2: LỊCH LUYỆN (THỂ LỰC 50, YÊU THÚ, BÍ CẢNH, ĐỘNG PHỦ & BOSS THẾ GIỚI) -->
+    <div id="tab-explore" class="tab-pane" style="display:none;">
+      <div class="card">
+        <div class="card-title">
+          <span>🗺️ Khu Vực Lịch Luyện</span>
+          <span id="lblStaminaDetail" style="font-size:12px; color:var(--cyan);">Thể lực: 50/50 (Hồi 1đ/phút)</span>
+        </div>
+        <div style="font-size:12px; color:var(--gold); margin-bottom:8px;">
+          🔨 Bảo hiểm Thiên Công Thần Chùy: <b id="lblPityHammer">0 / 50</b> lượt chắc chắn rơi
+        </div>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <button class="btn" onclick="doExplore('yeu_thu')">
+            🐉 Săn Yêu Thú Loạn Tinh Hải (-5 Thể Lực) | Cày Linh Thạch & Tích Bảo Hiểm Búa
+          </button>
+          <button class="btn btn-cyan" onclick="doExplore('bi_canh')">
+            🍑 Thám Hiểm Cổ Ma Bí Cảnh (-10 Thể Lực) | Rơi Thọ Mệnh Đan (+50t), Đan Đột Phá
+          </button>
+          <button class="btn btn-purple" onclick="doExplore('dong_phu')">
+            🏛️ Khai Quật Thượng Cổ Động Phủ (-15 Thể Lực) | Rơi Trang Bị Hiếm, Giáp, Nhẫn, Kiếm
+          </button>
+        </div>
+      </div>
+
+      <!-- Boss Thế Giới -->
+      <div class="card">
+        <div class="card-title">
+          <span>👹 Boss Thế Giới Toàn Server</span>
+          <button class="btn-sm" onclick="loadBoss()">🔄 Làm mới</button>
+        </div>
+        <div id="bossInfoBox"></div>
+        <button class="btn btn-red" style="margin-top:8px;" onclick="attackBoss()">⚔️ Khiêu Chiến Boss Thế Giới (Tối đa 5 lượt)</button>
+        <p style="font-size:11px; color:var(--muted); margin-top:6px;">
+          * Khi Boss bị hạ: Top 10 Sát Thương nhận danh hiệu <b>"Vây Hạ Đại Boss"</b> (+10% Né vượt trần). Top 50 có <b>10% cơ hội</b> nhận bảo vật <b>Nhẫn Quỷ</b> (+10% Bạo, +20% Hút máu, +20% Giảm ST)!
+        </p>
+        <div style="margin-top:10px; font-size:12px; font-weight:700; color:var(--gold);">🏆 BXH Sát Thương Boss (Top 50):</div>
+        <div id="bossLeaderboard" style="max-height:150px; overflow-y:auto; font-size:12px; margin-top:4px;"></div>
+      </div>
+    </div>
+
+    <!-- TAB 3: TIÊN THÂN (TRA CỨU POPUP [X], KHO LINH CĂN XUẤT TRẬN, RÈN +20, BÁN NHANH) -->
+    <div id="tab-body" class="tab-pane" style="display:none;">
+      <div class="card">
+        <div class="card-title">
+          <span>🧘 Thông Số Tiên Thân (Bấm vào để xem Buff)</span>
+        </div>
+        <p style="font-size:11px; color:var(--muted); margin-bottom:8px;">
+          * Bấm trực tiếp vào Danh Hiệu, Căn Cốt hoặc Linh Căn bên dưới để mở cửa sổ xem chi tiết chỉ số cộng thêm:
+        </p>
+        <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;">
+          <div>Danh hiệu: <span id="bdTitleBadge" class="badge rank-S" onclick="inspectTitle()">...</span></div>
+          <div>Căn cốt: <span id="bdBoneBadge" class="badge rank-SS" onclick="inspectBone()">...</span></div>
+        </div>
+        <div class="grid-2" id="bdCombatStats"></div>
+      </div>
+
+      <!-- Kho Linh Căn & Chọn Xuất Trận (Tối đa 7) -->
+      <div class="card">
+        <div class="card-title">
+          <span>🌈 Kho Linh Căn Lưu Trữ</span>
+          <span id="lblRootsCount" style="font-size:12px; color:var(--cyan);">Xuất trận: 1/7</span>
+        </div>
+        <p style="font-size:11px; color:var(--muted); margin-bottom:8px;">
+          * Bấm vào tên Linh Căn để xem chỉ số & Ngũ Hành. Bấm nút [Xuất Trận / Tháo] để tùy ý mang vào chiến đấu.
+        </p>
+        <div id="rootsInventoryList"></div>
+      </div>
+
+      <!-- Đan Dược Đang Sở Hữu -->
+      <div class="card">
+        <div class="card-title"><span>💊 Túi Đan Dược</span></div>
+        <div class="grid-2">
+          <div class="stat-pill">
+            <span>🍑 Thọ Mệnh Đan: <b id="pillThoMenh">0</b></span>
+            <button class="btn-sm gold" onclick="usePill('tho_menh')">Dùng (+50t)</button>
+          </div>
+          <div class="stat-pill">
+            <span>💊 Đan Đột Phá: <b id="pillDotPha">0</b></span>
+            <button class="btn-sm gold" onclick="usePill('dot_pha')">Dùng (+10%)</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Trang Bị Đang Mặc & Hành Trang + Đập Búa +20 -->
+      <div class="card">
+        <div class="card-title">
+          <span>🛡️ Trang Bị & Cường Hóa (+20)</span>
+          <span style="font-size:12px;">🔨 <b id="lblHammers">0</b> | ⚒️ <b id="lblIron">0</b> Linh Thiết</span>
+        </div>
+        <div id="equippedItemsBox" style="margin-bottom:10px;"></div>
+        <div class="grid-2" style="margin-bottom:8px;">
+          <button class="btn-sm danger" onclick="itemAction('sell_trash')">💰 Bán Nhanh Đồ D/C</button>
+          <button class="btn-sm gold" onclick="itemAction('salvage_high')">⚒️ Tách Đồ B/A Lấy Thiết</button>
+        </div>
+        <div style="font-size:12px; font-weight:700; color:var(--gold); margin-bottom:6px;">🎒 Hành Trang Lưu Trữ:</div>
+        <div id="inventoryItemsBox"></div>
+      </div>
+    </div>
+
+    <!-- TAB 4: VẠN BẢO CÁC (15 MÓN ĐỒ, KHÔNG BÁN NHẪN QUỶ) -->
+    <div id="tab-shop" class="tab-pane" style="display:none;">
+      <div class="card">
+        <div class="card-title">
+          <span>🏪 Vạn Bảo Các (15 Bảo Vật)</span>
+          <span id="shopStones" style="color:var(--gold);">0 💎</span>
+        </div>
+        <p style="font-size:11px; color:var(--muted); margin-bottom:8px;">
+          * Nhẫn Quỷ là thần khí độc quyền chỉ rơi từ Boss Thế Giới (10% tỉ lệ Top 50), tuyệt đối không bán tại Bảo Các.
+        </p>
+        <div id="shopItemsList"></div>
+      </div>
+    </div>
+
+    <!-- TAB 5: LÔI ĐÀI LUẬN KIẾM -->
+    <div id="tab-arena" class="tab-pane" style="display:none;">
+      <div class="card">
+        <div class="card-title">
+          <span>⚔️ Lôi Đài Luận Kiếm</span>
+          <button class="btn-sm" onclick="loadArena()">🔄 Tìm đối thủ</button>
+        </div>
+        <div id="arenaListBox"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Thanh Điều Hướng Dưới Đáy (Khóa chặt khi chưa chọn nhân vật) -->
+  <div class="bottom-nav">
+    <button id="nav-slots" class="nav-btn active" onclick="switchTab('slots')">🏛️<span>Luân Hồi</span></button>
+    <button id="nav-cultivate" class="nav-btn locked" onclick="switchTab('cultivate')">🧘<span>Tu Hành</span></button>
+    <button id="nav-explore" class="nav-btn locked" onclick="switchTab('explore')">🗺️<span>Lịch Luyện</span></button>
+    <button id="nav-body" class="nav-btn locked" onclick="switchTab('body')">✨<span>Tiên Thân</span></button>
+    <button id="nav-shop" class="nav-btn locked" onclick="switchTab('shop')">🏪<span>Bảo Các</span></button>
+    <button id="nav-arena" class="nav-btn locked" onclick="switchTab('arena')">⚔️<span>Lôi Đài</span></button>
+  </div>
+
+  <!-- POPUP TRA CỨU THÔNG TIN CHI TIẾT (CÓ DẤU [X] TẮT ĐI) -->
+  <div id="infoModal" class="modal-backdrop">
+    <div class="modal-box">
+      <button class="modal-close" onclick="closeModal('infoModal')">✕</button>
+      <h3 id="modalTitle" style="color:var(--gold); font-size:15px; margin-bottom:8px;">Chi Tiết</h3>
+      <div id="modalBody" style="font-size:13px; line-height:1.6; color:var(--text);"></div>
+    </div>
+  </div>
+
+  <!-- POPUP DEV TRIỆU HỒI BOSS THẾ GIỚI -->
+  <div id="devModal" class="modal-backdrop">
+    <div class="modal-box">
+      <button class="modal-close" onclick="closeModal('devModal')">✕</button>
+      <h3 style="color:var(--gold); font-size:15px; margin-bottom:8px;">⚙️ Bảng Điều Khiển DEV (Boss Thế Giới)</h3>
+      <input type="password" id="devSecret" placeholder="Nhập mật lệnh DEV (DevGame)..." />
+      <input type="text" id="devBossName" value="Thái Cổ Ma Long" placeholder="Tên Boss..." />
+      <div class="grid-2">
+        <input type="number" id="devBossHp" value="1000000" placeholder="Máu Boss" />
+        <input type="number" id="devBossAtk" value="1200" placeholder="Công Boss" />
+        <input type="number" id="devBossDef" value="300" placeholder="Giáp Boss" />
+        <input type="number" id="devBossDodge" value="15" placeholder="% Né Boss" />
+      </div>
+      <select id="devBossElem">
+        <option value="Hỏa">Hệ Hỏa</option>
+        <option value="Thủy">Hệ Thủy</option>
+        <option value="Mộc">Hệ Mộc</option>
+        <option value="Kim">Hệ Kim</option>
+        <option value="Thổ">Hệ Thổ</option>
+      </select>
+      <button class="btn" onclick="submitDevBoss()">Triệu Hồi Boss Toàn Server</button>
+    </div>
+  </div>
+
+  <!-- POPUP ĐĂNG NHẬP / ĐỔI TÀI KHOẢN -->
+  <div id="loginModal" class="modal-backdrop">
+    <div class="modal-box">
+      <h3 style="color:var(--gold); font-size:15px; margin-bottom:8px;">🔑 Đăng Nhập / Đổi Tài Khoản</h3>
+      <p style="font-size:12px; color:var(--muted); margin-bottom:8px;">
+        Nhập Tên Tài Khoản hoặc ID bất kỳ để vào đúng dữ liệu trên đám mây Turso:
+      </p>
+      <input type="text" id="inpLoginId" placeholder="VD: nguyen_acc1, hanlap99..." />
+      <button class="btn" onclick="confirmLogin()">Vào Tài Khoản</button>
+    </div>
+  </div>
+
+  <script>
+    let currentTgId = localStorage.getItem("tt_account_id") || "";
+    let currentChar = null;
+    let shopCatalog = [];
+    let selectedSlotCreate = 1;
+    let createStats = { linh_luc: 6, the_chat: 6, toc_do: 6, khi_van: 6, ngo_tinh: 6 };
+    let autoCultivateTimer = null;
+    let isCultivating = false;
+
+    const BASE_LABELS = {
+      linh_luc: "Linh Lực (Tăng Công & MP)",
+      the_chat: "Thể Chất (Tăng Máu & Chống Lôi Kiếp)",
+      toc_do: "Tốc Độ (Tăng Tỉ Lệ Né Tránh)",
+      khi_van: "Khí Vận (Tăng Bạo Kích & Kỳ Ngộ)",
+      ngo_tinh: "Ngộ Tính (Tăng Tu Vi & Trảm Tâm Ma)"
+    };
+
+    window.onload = () => {
+      if (window.Telegram && Telegram.WebApp && Telegram.WebApp.initDataUnsafe?.user?.id && !currentTgId) {
+        currentTgId = "tg_" + Telegram.WebApp.initDataUnsafe.user.id;
+        localStorage.setItem("tt_account_id", currentTgId);
+      }
+      if (!currentTgId) {
+        document.getElementById("loginModal").style.display = "flex";
+      } else {
+        loadAccountSlots();
+      }
+    };
+
+    // 1. ĐĂNG XUẤT / CHUYỂN TÀI KHOẢN
+    function logoutAccount() {
+      stopAutoCultivate();
+      currentChar = null;
+      updateNavGuard();
+      document.getElementById("inpLoginId").value = currentTgId;
+      document.getElementById("loginModal").style.display = "flex";
+    }
+
+    function confirmLogin() {
+      const val = document.getElementById("inpLoginId").value.trim();
+      if (!val) return alert("Vui lòng nhập ID/Tên tài khoản!");
+      currentTgId = val.replace(/\s+/g, "_");
+      localStorage.setItem("tt_account_id", currentTgId);
+      document.getElementById("loginModal").style.display = "none";
+      currentChar = null;
+      updateNavGuard();
+      switchTab("slots");
+      loadAccountSlots();
+    }
+
+    // 2. KHÓA ĐIỀU HƯỚNG KHI CHƯA CHỌN NHÂN VẬT (ROUTE GUARD)
+    function updateNavGuard() {
+      document.getElementById("lblAccount").innerText = "TK: " + (currentTgId || "Chưa đăng nhập");
+      const tabs = ["cultivate", "explore", "body", "shop", "arena"];
+      tabs.forEach(t => {
+        const btn = document.getElementById("nav-" + t);
+        if (currentChar) btn.classList.remove("locked");
+        else btn.classList.add("locked");
+      });
+    }
+
+    function switchTab(tabName) {
+      if (tabName !== "slots" && !currentChar) {
+        return showPopup("⚠️ Chưa Chọn Nhân Vật", "Đạo hữu phải chọn hoặc tạo nhân vật tại Luân Hồi Điện trước!");
+      }
+      document.querySelectorAll(".tab-pane").forEach(el => el.style.display = "none");
+      document.getElementById("tab-" + tabName).style.display = "block";
+      document.querySelectorAll(".nav-btn").forEach(el => el.classList.remove("active"));
+      document.getElementById("nav-" + tabName).classList.add("active");
+
+      if (tabName === "explore") loadBoss();
+      if (tabName === "arena") loadArena();
+    }
+
+    async function apiPost(url, data) {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.detail || "Lỗi máy chủ");
+      return json;
+    }
+
+    async function loadAccountSlots() {
+      updateNavGuard();
+      const res = await fetch(`/api/slots/${encodeURIComponent(currentTgId)}`);
+      const data = await res.json();
+      shopCatalog = data.shop || [];
+      const box = document.getElementById("slotsContainer");
+      box.innerHTML = "";
+      for (let i = 1; i <= 5; i++) {
+        const c = data.slots[i];
+        if (c) {
+          box.innerHTML += `
+            <div class="stat-pill" style="margin-bottom:8px; align-items:center;">
+              <div>
+                <b style="color:var(--gold);">Slot ${i}: ${c.name}</b> (${c.realm_name})<br/>
+                <span style="font-size:11px; color:var(--muted);">Tuổi: ${c.age}/${c.immortal ? '∞' : c.max_age} \vert{} Luân hồi: ${c.rebirth_count} lần</span>
+              </div>
+              <button class="btn-sm gold" onclick="enterChar('${c.id}')">Vào Chơi</button>
+            </div>`;
+        } else {
+          box.innerHTML += `
+            <div class="stat-pill" style="margin-bottom:8px; align-items:center;">
+              <span style="color:var(--muted);">Slot ${i}: Trống</span>
+              <button class="btn-sm" onclick="openCreateSlot(${i})">+ Tạo Nhân Vật</button>
+            </div>`;
+        }
+      }
+      renderShop();
+    }
+
+    function openCreateSlot(slot) {
+      selectedSlotCreate = slot;
+      createStats = { linh_luc: 6, the_chat: 6, toc_do: 6, khi_van: 6, ngo_tinh: 6 };
+      document.getElementById("createSlotTitle").innerText = `✨ Khởi Tạo Nhân Vật (Slot ${slot})`;
+      document.getElementById("createCharCard").style.display = "block";
+      renderCreateStats();
+    }
+
+    function renderCreateStats() {
+      const used = Object.values(createStats).reduce((a, b) => a + b, 0);
+      const rem = 30 - used;
+      document.getElementById("lblCreatePts").innerText = rem;
+      const box = document.getElementById("createStatsList");
+      box.innerHTML = "";
+      for (const [k, label] of Object.entries(BASE_LABELS)) {
+        box.innerHTML += `
+          <div class="stat-pill" style="margin-bottom:5px; align-items:center;">
+            <span>${label}</span>
             <div>
-                <label class="block text-slate-400 text-[10px] uppercase font-bold mb-1">Đạo Hiệu</label>
-                <input type="text" id="char-input-name" placeholder="Nhập tên nhân vật..." class="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded text-white outline-none">
+              <button class="btn-sm" onclick="modCreateStat('${k}', -1)">-</button>
+              <b style="margin:0 8px;">${createStats[k]}</b>
+              <button class="btn-sm" onclick="modCreateStat('${k}', 1)">+</button>
             </div>
+          </div>`;
+      }
+    }
 
-            <div class="space-y-1.5 bg-slate-950 p-2.5 rounded border border-slate-800">
-                <div class="flex justify-between text-[11px] font-bold text-amber-400">
-                    <span>Phân Bổ Tiềm Năng (5 Mục)</span>
-                    <span>Còn lại: <span id="remain-points">0</span>/30</span>
-                </div>
-                <div class="flex justify-between items-center">
-                    <span>✨ Linh Lực (Pháp lực, Công):</span>
-                    <div class="flex items-center gap-2">
-                        <button onclick="adjustPoint('linh_luc', -1)" class="w-5 h-5 bg-slate-800 rounded">-</button>
-                        <span id="pt-linh_luc" class="w-4 text-center font-bold">6</span>
-                        <button onclick="adjustPoint('linh_luc', 1)" class="w-5 h-5 bg-slate-800 rounded">+</button>
-                    </div>
-                </div>
-                <div class="flex justify-between items-center">
-                    <span>💪 Thể Chất (Máu, Giáp):</span>
-                    <div class="flex items-center gap-2">
-                        <button onclick="adjustPoint('the_chat', -1)" class="w-5 h-5 bg-slate-800 rounded">-</button>
-                        <span id="pt-the_chat" class="w-4 text-center font-bold">6</span>
-                        <button onclick="adjustPoint('the_chat', 1)" class="w-5 h-5 bg-slate-800 rounded">+</button>
-                    </div>
-                </div>
-                <div class="flex justify-between items-center">
-                    <span>⚡ Tốc Độ (Né tránh, Tiên thủ):</span>
-                    <div class="flex items-center gap-2">
-                        <button onclick="adjustPoint('toc_do', -1)" class="w-5 h-5 bg-slate-800 rounded">-</button>
-                        <span id="pt-toc_do" class="w-4 text-center font-bold">6</span>
-                        <button onclick="adjustPoint('toc_do', 1)" class="w-5 h-5 bg-slate-800 rounded">+</button>
-                    </div>
-                </div>
-                <div class="flex justify-between items-center">
-                    <span>🍀 Khí Vận (Rơi đồ, Kỳ ngộ):</span>
-                    <div class="flex items-center gap-2">
-                        <button onclick="adjustPoint('khi_van', -1)" class="w-5 h-5 bg-slate-800 rounded">-</button>
-                        <span id="pt-khi_van" class="w-4 text-center font-bold">6</span>
-                        <button onclick="adjustPoint('khi_van', 1)" class="w-5 h-5 bg-slate-800 rounded">+</button>
-                    </div>
-                </div>
-                <div class="flex justify-between items-center">
-                    <span>🧠 Ngộ Tính (Tăng tốc tu luyện):</span>
-                    <div class="flex items-center gap-2">
-                        <button onclick="adjustPoint('ngo_tinh', -1)" class="w-5 h-5 bg-slate-800 rounded">-</button>
-                        <span id="pt-ngo_tinh" class="w-4 text-center font-bold">6</span>
-                        <button onclick="adjustPoint('ngo_tinh', 1)" class="w-5 h-5 bg-slate-800 rounded">+</button>
-                    </div>
-                </div>
-            </div>
+    function modCreateStat(k, delta) {
+      const used = Object.values(createStats).reduce((a, b) => a + b, 0);
+      if (delta > 0 && used >= 30) return;
+      if (createStats[k] + delta < 0) return;
+      createStats[k] += delta;
+      renderCreateStats();
+    }
 
-            <button onclick="confirmCreateChar()" class="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold rounded-lg text-xs">
-                Khai Mở Hồn Kiếp
-            </button>
-        </div>
-    </div>
-
-    <!-- MODAL SPAM BOSS THẾ GIỚI (DÀNH CHO DEV) -->
-    <div id="spawn-boss-modal" class="hidden fixed inset-0 bg-black/90 flex items-center justify-center p-3 z-50">
-        <div class="bg-slate-900 border border-rose-600 w-full max-w-sm rounded-xl p-4 space-y-2 text-xs">
-            <h3 class="font-bold text-rose-400 uppercase">Thiết Lập Boss Thế Giới (DEV)</h3>
-            <div>
-                <label class="text-[10px] text-slate-400">Tên Boss:</label>
-                <input id="wb-cfg-name" type="text" value="Vạn Cổ Ma Hoàng" class="w-full bg-slate-950 p-1.5 rounded border border-slate-700 text-white">
-            </div>
-            <div class="grid grid-cols-2 gap-2">
-                <div>
-                    <label class="text-[10px] text-slate-400">Khí Huyết (HP):</label>
-                    <input id="wb-cfg-hp" type="number" value="100000" class="w-full bg-slate-950 p-1.5 rounded border border-slate-700 text-white">
-                </div>
-                <div>
-                    <label class="text-[10px] text-slate-400">Công Kích:</label>
-                    <input id="wb-cfg-atk" type="number" value="800" class="w-full bg-slate-950 p-1.5 rounded border border-slate-700 text-white">
-                </div>
-                <div>
-                    <label class="text-[10px] text-slate-400">Giáp:</label>
-                    <input id="wb-cfg-armor" type="number" value="300" class="w-full bg-slate-950 p-1.5 rounded border border-slate-700 text-white">
-                </div>
-                <div>
-                    <label class="text-[10px] text-slate-400">Né Tránh (%):</label>
-                    <input id="wb-cfg-dodge" type="number" value="15" class="w-full bg-slate-950 p-1.5 rounded border border-slate-700 text-white">
-                </div>
-                <div>
-                    <label class="text-[10px] text-slate-400">Phản Kích (%):</label>
-                    <input id="wb-cfg-counter" type="number" value="15" class="w-full bg-slate-950 p-1.5 rounded border border-slate-700 text-white">
-                </div>
-                <div>
-                    <label class="text-[10px] text-slate-400">Hút Máu (%):</label>
-                    <input id="wb-cfg-lifesteal" type="number" value="10" class="w-full bg-slate-950 p-1.5 rounded border border-slate-700 text-white">
-                </div>
-            </div>
-            <div class="flex gap-2 pt-2">
-                <button onclick="closeSpawnBossModal()" class="flex-1 py-1.5 bg-slate-800 rounded">Hủy</button>
-                <button onclick="submitSpawnBoss()" class="flex-1 py-1.5 bg-rose-700 font-bold rounded text-white">Triệu Hồi Ngay</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- MODAL BATTLE LOGS -->
-    <div id="battle-modal" class="hidden fixed inset-0 bg-black/95 flex flex-col p-4 z-50">
-        <div class="flex justify-between items-center pb-2 border-b border-slate-800">
-            <h3 class="font-bold text-amber-400 text-xs" id="battle-title">CHIẾN ĐẤU</h3>
-            <button onclick="closeBattleModal()" class="text-slate-400 px-2 py-1"><i class="fa-solid fa-xmark"></i></button>
-        </div>
-        <div id="battle-logs" class="flex-1 overflow-y-auto my-3 space-y-1.5 text-xs font-mono p-3 bg-slate-950 rounded border border-slate-800 custom-scroll"></div>
-        <button onclick="closeBattleModal()" class="w-full py-2 bg-amber-600 text-slate-950 font-bold rounded text-xs">Thu Nhận Kết Quả</button>
-    </div>
-
-    <!-- MODAL DEV -->
-    <div id="dev-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
-        <div class="bg-slate-900 border border-amber-600 w-full max-w-xs rounded-xl p-4 space-y-3">
-            <h3 class="font-bold text-amber-400 text-xs uppercase">Mở Khóa Dev Mode</h3>
-            <input type="password" id="dev-pass" placeholder="Nhập mật mã..." class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded text-xs text-white outline-none">
-            <div class="flex gap-2">
-                <button onclick="closeDevModal()" class="flex-1 py-1.5 bg-slate-800 text-xs rounded text-slate-300">Hủy</button>
-                <button onclick="submitDevPassword()" class="flex-1 py-1.5 bg-amber-600 text-slate-950 font-bold text-xs rounded">Xác Nhận</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- NAVIGATION 5 TABS -->
-    <nav class="bg-slate-950 border-t border-slate-800 flex justify-around p-2 sticky bottom-0 z-20">
-        <button onclick="switchTab('tab-tuhan')" class="nav-btn flex flex-col items-center text-amber-500 text-[10px]">
-            <i class="fa-solid fa-feather text-sm mb-0.5"></i>Tu Hành
-        </button>
-        <button onclick="switchTab('tab-lichluyen')" class="nav-btn flex flex-col items-center text-slate-400 text-[10px]">
-            <i class="fa-solid fa-map-location-dot text-sm mb-0.5"></i>Lịch Luyện
-        </button>
-        <button onclick="switchTab('tab-tienthan')" class="nav-btn flex flex-col items-center text-slate-400 text-[10px]">
-            <i class="fa-solid fa-user-ninja text-sm mb-0.5"></i>Tiên Thân
-        </button>
-        <button onclick="switchTab('tab-shop')" class="nav-btn flex flex-col items-center text-slate-400 text-[10px]">
-            <i class="fa-solid fa-store text-sm mb-0.5"></i>Bảo Các
-        </button>
-        <button onclick="switchTab('tab-pvp')" class="nav-btn flex flex-col items-center text-slate-400 text-[10px]">
-            <i class="fa-solid fa-trophy text-sm mb-0.5"></i>Lôi Đài
-        </button>
-    </nav>
-
-    <script>
-        const tg = window.Telegram?.WebApp;
-        if (tg) { tg.ready(); tg.expand(); }
-        const tgUser = tg?.initDataUnsafe?.user;
-        const telegramId = tgUser?.id ? String(tgUser.id) : "987654321";
-        const displayName = tgUser?.username ? `@${tgUser.username}` : (tgUser?.first_name || "Đạo Hữu");
-
-        let currentChar = null;
-        let isDev = false;
-        let targetSlotIndex = 1;
-        let cooldownTimer = null;
-
-        let points = { linh_luc: 6, the_chat: 6, toc_do: 6, khi_van: 6, ngo_tinh: 6 };
-
-        function updateRemainPoints() {
-            const sum = Object.values(points).reduce((a, b) => a + b, 0);
-            document.getElementById('remain-points').innerText = 30 - sum;
-        }
-
-        function adjustPoint(type, delta) {
-            const sum = Object.values(points).reduce((a, b) => a + b, 0);
-            if (delta > 0 && sum >= 30) return;
-            if (delta < 0 && points[type] <= 1) return;
-            points[type] += delta;
-            document.getElementById(`pt-${type}`).innerText = points[type];
-            updateRemainPoints();
-        }
-
-        async function loadSlots() {
-            const res = await fetch(`/api/slots/${telegramId}`);
-            const data = await res.json();
-            const container = document.getElementById('slots-container');
-            container.innerHTML = "";
-
-            for (let i = 1; i <= 5; i++) {
-                const char = data.slots[i];
-                const card = document.createElement('div');
-                card.className = "p-3 rounded-xl border bg-slate-900/90 flex justify-between items-center " + (char ? "border-amber-600/40" : "border-slate-800 border-dashed");
-                if (char) {
-                    card.innerHTML = `
-                        <div>
-                            <div class="flex items-center gap-1.5">
-                                <span class="font-bold text-slate-100 text-sm">${char.name}</span>
-                                ${char.is_dev ? '<span class="text-[9px] px-1 bg-rose-900 text-rose-300 font-bold rounded">DEV</span>' : ''}
-                            </div>
-                            <p class="text-[11px] text-amber-500">${char.realm_title} • ${char.age}/${char.max_age}t • 💎 ${char.linh_thach}</p>
-                        </div>
-                        <div class="flex gap-2">
-                            <button onclick="selectCharacter(${JSON.stringify(char).replace(/"/g, '&quot;')})" class="px-3 py-1 bg-amber-600 text-slate-950 text-xs font-bold rounded-lg">Nhập Thể</button>
-                            <button onclick="deleteChar(${i}, '${char.name}')" class="px-2 py-1 bg-rose-950 text-rose-300 text-xs rounded-lg border border-rose-800"><i class="fa-solid fa-trash"></i></button>
-                        </div>
-                    `;
-                } else {
-                    card.innerHTML = `
-                        <span class="text-xs text-slate-500">Slot ${i}: Trống</span>
-                        <button onclick="openCreateModal(${i})" class="px-3 py-1 bg-slate-800 text-amber-400 text-xs rounded-lg border border-slate-700">Khởi Tạo</button>
-                    `;
-                }
-                container.appendChild(card);
-            }
-        }
-
-        function openCreateModal(slotIdx) {
-            targetSlotIndex = slotIdx;
-            document.getElementById('char-input-name').value = `Tu Sĩ ${Math.floor(Math.random()*1000)}`;
-            updateRemainPoints();
-            document.getElementById('create-modal').classList.remove('hidden');
-        }
-        function closeCreateModal() { document.getElementById('create-modal').classList.add('hidden'); }
-
-        async function confirmCreateChar() {
-            const name = document.getElementById('char-input-name').value.trim();
-            if (!name) return alert("Vui lòng nhập đạo hiệu!");
-
-            const payload = {
-                telegram_id: telegramId,
-                username: displayName,
-                slot_index: targetSlotIndex,
-                name: name,
-                allocated_points: points
-            };
-            if (isDev) payload.admin_password = "DevGame";
-
-            const res = await fetch('/api/characters/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-            if (res.ok) {
-                closeCreateModal();
-                isDev = false;
-                loadSlots();
-            } else {
-                alert((await res.json()).detail);
-            }
-        }
-
-        async function deleteChar(slotIndex, expectedName) {
-            const confirmName = prompt(`Nhập chính xác tên [${expectedName}] để xóa:`);
-            if (confirmName !== expectedName) return alert("Tên không trùng khớp!");
-            const res = await fetch('/api/characters/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ telegram_id: telegramId, slot_index: slotIndex, confirm_name: confirmName }) });
-            if (res.ok) loadSlots();
-        }
-
-        function selectCharacter(char) {
-            currentChar = char;
-            refreshUI();
-            switchTab('tab-tuhan');
-            checkCooldown();
-        }
-
-        function refreshUI() {
-            if (!currentChar) return;
-            document.getElementById('header-char-info').innerText = `${currentChar.name} (${currentChar.realm_title})`;
-            document.getElementById('header-lt').innerText = `💎 ${currentChar.linh_thach}`;
-            document.getElementById('header-hammers').innerText = `🔨 ${currentChar.hammers}`;
-            
-            // Thanh tu luyện góc trên
-            document.getElementById('bar-realm').innerText = currentChar.realm_title;
-            const expPct = Math.min(100, Math.floor((currentChar.exp / currentChar.exp_max) * 100));
-            document.getElementById('bar-exp-text').innerText = `${currentChar.exp}/${currentChar.exp_max} (${expPct}%)`;
-            document.getElementById('bar-exp-fill').style.width = `${expPct}%`;
-
-            // Tab Tu Hành
-            document.getElementById('story-char-name').innerText = currentChar.name;
-            document.getElementById('story-realm').innerText = currentChar.realm_title;
-            document.getElementById('story-age').innerText = currentChar.age;
-            document.getElementById('story-max-age').innerText = currentChar.max_age;
-            document.getElementById('story-rebirth').innerText = currentChar.rebirth_count;
-            document.getElementById('boss-pity-text').innerText = `Bảo hiểm Búa: ${currentChar.pity_boss}/80`;
-
-            if (currentChar.destiny) {
-                document.getElementById('story-destiny-badge').innerText = `✨ ${currentChar.destiny.name}`;
-            }
-
-            // Nút Dev Spam Boss
-            if (currentChar.is_dev) {
-                document.getElementById('btn-dev-spawn-wb').classList.remove('hidden');
-            } else {
-                document.getElementById('btn-dev-spawn-wb').classList.add('hidden');
-            }
-
-            // 5 Thuộc Tính Gốc
-            document.getElementById('stat-free-points').innerText = currentChar.free_points;
-            const statCont = document.getElementById('five-stats-container');
-            statCont.innerHTML = "";
-            const statMap = {
-                linh_luc: { name: "Linh Lực", icon: "✨" },
-                the_chat: { name: "Thể Chất", icon: "💪" },
-                toc_do: { name: "Tốc Độ", icon: "⚡" },
-                khi_van: { name: "Khí Vận", icon: "🍀" },
-                ngo_tinh: { name: "Ngộ Tính", icon: "🧠" }
-            };
-
-            for (const [key, meta] of Object.entries(statMap)) {
-                const val = currentChar.base_stats[key] || 0;
-                const d = document.createElement('div');
-                d.className = "flex justify-between items-center p-1.5 bg-slate-950 rounded border border-slate-800";
-                d.innerHTML = `
-                    <span>${meta.icon} ${meta.name}: <b class="text-white">${val}</b>/100</span>
-                    ${currentChar.free_points > 0 && val < 100 ? `<button onclick="addStatPoint('${key}')" class="px-1.5 py-0.2 bg-amber-600 text-slate-950 font-bold rounded text-[9px]">+</button>` : ''}
-                `;
-                statCont.appendChild(d);
-            }
-
-            // Linh Căn Xuất Chiến
-            const rootsList = document.getElementById('roots-list');
-            rootsList.innerHTML = "";
-            currentChar.roots.forEach((r, idx) => {
-                const d = document.createElement('div');
-                d.className = "p-1.5 bg-slate-950 rounded border border-slate-800 flex justify-between items-center";
-                d.innerHTML = `
-                    <div>
-                        <span class="font-bold tier-${r.tier}">[${r.tier}] ${r.name}</span>
-                        <p class="text-slate-400 text-[9px] truncate max-w-[110px]">${r.desc}</p>
-                    </div>
-                    <button onclick="removeRoot(${idx})" class="text-slate-500 hover:text-rose-400 text-[10px] px-1"><i class="fa-solid fa-trash"></i></button>
-                `;
-                rootsList.appendChild(d);
-            });
-            document.getElementById('roots-count').innerText = currentChar.roots.length;
-
-            // 9 Vị Trí Trang Bị
-            const eqGrid = document.getElementById('equipment-grid');
-            eqGrid.innerHTML = "";
-            const slotNames = {
-                vk1: "Vũ Khí 1", vk2: "Vũ Khí 2", mu: "Mũ",
-                ao: "Áo", quan: "Quần", giay: "Giày",
-                nhan1: "Nhẫn 1", nhan2: "Nhẫn 2", nhan3: "Nhẫn 3"
-            };
-
-            for (const [key, label] of Object.entries(slotNames)) {
-                const it = currentChar.equipment[key];
-                const d = document.createElement('div');
-                d.className = "p-1.5 rounded bg-slate-950 border border-slate-800 text-[10px] flex flex-col justify-between";
-                if (it) {
-                    d.innerHTML = `
-                        <span class="text-slate-400 text-[9px]">${label}</span>
-                        <p class="font-bold text-amber-300 truncate text-[10px]">${it.name}</p>
-                        <div class="flex justify-between items-center mt-1">
-                            <span class="text-amber-500 font-bold">+${it.enhance || 0}</span>
-                            <button onclick="enhanceItem('${key}')" class="px-1.5 py-0.5 bg-amber-600 text-slate-950 font-bold rounded text-[9px]">Đập</button>
-                        </div>
-                    `;
-                } else {
-                    d.innerHTML = `<span class="text-slate-500 text-[9px]">${label}</span><p class="text-slate-600 italic">Trống</p>`;
-                }
-                eqGrid.appendChild(d);
-            }
-
-            // Combat Stats
-            const st = currentChar.total_stats;
-            document.getElementById('stats-display').innerHTML = `
-                <p>❤️ Máu: <span class="text-white font-bold">${st.hp}</span></p>
-                <p>🌀 Linh Lực: <span class="text-white font-bold">${st.mp}</span></p>
-                <p>⚔️ Sức Mạnh: <span class="text-white font-bold">${st.suc_manh}</span></p>
-                <p>⚡ Tốc Độ: <span class="text-white font-bold">${st.toc_do}</span></p>
-                <p>🛡️ Giáp: <span class="text-white font-bold">${st.thu}</span></p>
-                <p>💨 Né Tránh: <span class="text-white font-bold">${st.ne_tranh}%</span></p>
-                <p>💥 Bạo Kích: <span class="text-white font-bold">${st.bao_kich}%</span></p>
-                <p>🩸 Hút Máu: <span class="text-white font-bold">${st.hut_mau}%</span></p>
-            `;
-
-            // Túi Đồ
-            document.getElementById('inv-count').innerText = currentChar.inventory.length;
-            const invDiv = document.getElementById('inventory-list');
-            invDiv.innerHTML = "";
-            if (currentChar.inventory.length === 0) {
-                invDiv.innerHTML = "<p class='text-[10px] text-slate-500 italic py-2'>Túi trữ vật trống.</p>";
-            } else {
-                currentChar.inventory.forEach((item, idx) => {
-                    const row = document.createElement('div');
-                    row.className = "flex justify-between items-center p-1.5 bg-slate-950 rounded border border-slate-900 text-[10px]";
-                    row.innerHTML = `
-                        <span class="text-slate-300">${item.name}</span>
-                        <button onclick="sellItem(${idx})" class="px-2 py-0.5 bg-rose-950 text-rose-300 rounded border border-rose-800 text-[9px]">Bán (+70%)</button>
-                    `;
-                    invDiv.appendChild(row);
-                });
-            }
-        }
-
-        async function reloadCurrentChar() {
-            const res = await fetch(`/api/slots/${telegramId}`);
-            const data = await res.json();
-            currentChar = data.slots[currentChar.slot_index || 1];
-            refreshUI();
-        }
-
-        // --- XỬ LÝ 10S COOLDOWN TU LUYỆN ---
-        function checkCooldown() {
-            if (!currentChar) return;
-            const now = Date.now() / 1000;
-            const last = currentChar.last_cultivate_time || 0;
-            const remain = Math.ceil(10 - (now - last));
-            if (remain > 0) startCooldownUI(remain);
-        }
-
-        function startCooldownUI(seconds) {
-            const btn = document.getElementById('btn-story-step');
-            btn.disabled = true;
-            let count = seconds;
-            btn.innerText = `⏳ TÂM CẢNH ĐIỀU TỨC (${count}S)`;
-            if (cooldownTimer) clearInterval(cooldownTimer);
-            cooldownTimer = setInterval(() => {
-                count--;
-                if (count <= 0) {
-                    clearInterval(cooldownTimer);
-                    btn.disabled = false;
-                    btn.innerText = "⏳ TU LUYỆN 1 NĂM (10S COOLDOWN)";
-                } else {
-                    btn.innerText = `⏳ TÂM CẢNH ĐIỀU TỨC (${count}S)`;
-                }
-            }, 1000);
-        }
-
-        async function doStoryStep() {
-            const res = await fetch('/api/action/story_step', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ char_id: currentChar.char_id }) });
-            const d = await res.json();
-            if (res.ok) {
-                const logBox = document.getElementById('story-log-box');
-                const p = document.createElement('p');
-                p.innerText = d.log;
-                logBox.prepend(p);
-                startCooldownUI(10);
-                await reloadCurrentChar();
-            } else {
-                alert(d.detail);
-            }
-        }
-
-        async function addStatPoint(key) {
-            const res = await fetch('/api/action/add_stat_point', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ char_id: currentChar.char_id, stat_key: key }) });
-            if (res.ok) await reloadCurrentChar();
-            else alert((await res.json()).detail);
-        }
-
-        async function doRebirth() {
-            if (!confirm("Xác nhận Niết Bàn Trùng Sinh? Bạn sẽ bắt đầu lại từ 1 tuổi và nhận thêm +10 Điểm Tiềm Năng vĩnh viễn!")) return;
-            const res = await fetch('/api/action/rebirth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ char_id: currentChar.char_id }) });
-            const d = await res.json();
-            if (res.ok) { alert(d.msg); await reloadCurrentChar(); }
-            else alert(d.detail);
-        }
-
-        async function gachaRoot() {
-            const res = await fetch('/api/action/gacha_root', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ char_id: currentChar.char_id }) });
-            const d = await res.json();
-            if (res.ok) { alert(d.msg); await reloadCurrentChar(); }
-            else alert(d.detail);
-        }
-
-        async function removeRoot(idx) {
-            if (!confirm("Gỡ bỏ linh căn này?")) return;
-            const res = await fetch(`/api/action/remove_root?char_id=${currentChar.char_id}&root_index=${idx}`, { method: 'DELETE' });
-            if (res.ok) await reloadCurrentChar();
-        }
-
-        // --- WORLD BOSS LOGIC ---
-        async function loadWorldBoss() {
-            if (!currentChar) return;
-            const res = await fetch(`/api/world_boss/status?char_id=${currentChar.char_id}`);
-            const data = await res.json();
-            const box = document.getElementById('wb-info-box');
-            if (!data.active) {
-                box.innerHTML = "<p class='text-slate-500 italic py-2 text-center'>Hiện tại không có Boss Thế Giới nào thức tỉnh.</p>";
-                document.getElementById('btn-attack-wb').disabled = true;
-                return;
-            }
-            const b = data.boss;
-            document.getElementById('btn-attack-wb').disabled = (b.attacks_left <= 0 || b.current_hp <= 0);
-            document.getElementById('wb-attacks-left').innerText = `Lượt: ${b.attacks_left}/5`;
-            const hpPct = Math.max(0, Math.floor((b.current_hp / b.max_hp) * 100));
-            box.innerHTML = `
-                <div class="flex justify-between font-bold text-amber-400">
-                    <span>${b.name}</span>
-                    <span>${b.current_hp}/${b.max_hp} (${hpPct}%)</span>
-                </div>
-                <div class="w-full bg-slate-900 h-2 rounded overflow-hidden">
-                    <div class="bg-rose-600 h-full" style="width:${hpPct}%"></div>
-                </div>
-                <p class="text-[10px] text-slate-400">⚔️ Công: ${b.attack} • 🛡️ Giáp: ${b.armor} • 💨 Né: ${b.dodge}% • 🛡️ Phản: ${b.counter}%</p>
-            `;
-        }
-
-        async function attackWorldBoss() {
-            document.getElementById('battle-title').innerText = "VÂY HÃM BOSS THẾ GIỚI";
-            const logBox = document.getElementById('battle-logs');
-            logBox.innerHTML = "<p class='text-amber-400'>Đang vận chuyển pháp lực nhập trận...</p>";
-            document.getElementById('battle-modal').classList.remove('hidden');
-
-            const res = await fetch('/api/world_boss/attack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ char_id: currentChar.char_id }) });
-            const d = await res.json();
-            if (res.ok) {
-                logBox.innerHTML = "";
-                d.logs.forEach(l => {
-                    const p = document.createElement('p');
-                    p.innerText = l;
-                    logBox.appendChild(p);
-                });
-                const summary = document.createElement('p');
-                summary.className = "text-amber-400 font-bold mt-2 pt-2 border-t border-slate-800";
-                summary.innerText = `💥 Gây: ${d.damage_dealt} Sát Thương | Thu về: +${d.reward_lt} 💎! Còn ${d.attacks_left} lượt đánh.`;
-                logBox.prepend(summary);
-                await reloadCurrentChar();
-                await loadWorldBoss();
-            } else {
-                logBox.innerHTML = `<p class='text-rose-400'>${d.detail}</p>`;
-            }
-        }
-
-        function openSpawnBossModal() { document.getElementById('spawn-boss-modal').classList.remove('hidden'); }
-        function closeSpawnBossModal() { document.getElementById('spawn-boss-modal').classList.add('hidden'); }
-
-        async function submitSpawnBoss() {
-            const payload = {
-                admin_password: "DevGame",
-                name: document.getElementById('wb-cfg-name').value,
-                hp: parseInt(document.getElementById('wb-cfg-hp').value),
-                attack: parseInt(document.getElementById('wb-cfg-atk').value),
-                armor: parseInt(document.getElementById('wb-cfg-armor').value),
-                dodge: parseFloat(document.getElementById('wb-cfg-dodge').value),
-                counter: parseFloat(document.getElementById('wb-cfg-counter').value),
-                lifesteal: parseFloat(document.getElementById('wb-cfg-lifesteal').value)
-            };
-            const res = await fetch('/api/dev/spawn_world_boss', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-            const d = await res.json();
-            if (res.ok) { alert(d.msg); closeSpawnBossModal(); loadWorldBoss(); }
-            else alert(d.detail);
-        }
-
-        // --- CÁC HÀM CŨ ĐÃ ĐƯỢC VÁ LỖI ---
-        async function doHuntBoss() {
-            const res = await fetch('/api/action/hunt_boss', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ char_id: currentChar.char_id }) });
-            const d = await res.json();
-            document.getElementById('boss-result-box').innerText = d.msg;
-            await reloadCurrentChar();
-        }
-
-        async function enhanceItem(slotKey) {
-            const res = await fetch('/api/action/enhance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ char_id: currentChar.char_id, slot_key: slotKey }) });
-            const d = await res.json();
-            alert(res.ok ? d.msg : (d.detail || "Cường hóa thất bại!"));
-            await reloadCurrentChar();
-        }
-
-        async function sellItem(idx) {
-            const res = await fetch('/api/action/sell_item', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ char_id: currentChar.char_id, inv_index: idx }) });
-            const d = await res.json();
-            alert(d.msg);
-            await reloadCurrentChar();
-        }
-
-        async function buyShopItem(itemId) {
-            const res = await fetch('/api/action/buy_item', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ char_id: currentChar.char_id, item_id: itemId }) });
-            const d = await res.json();
-            if (res.ok) { alert(d.msg); await reloadCurrentChar(); }
-            else alert(d.detail);
-        }
-
-        async function loadPvPLobby() {
-            if (!currentChar) return;
-            const res = await fetch(`/api/pvp/lobby?exclude_id=${currentChar.char_id}`);
-            const data = await res.json();
-            const list = document.getElementById('pvp-list');
-            list.innerHTML = "";
-            if (data.opponents.length === 0) { list.innerHTML = "<p class='text-xs text-slate-500 py-4 text-center'>Chưa có tu sĩ online.</p>"; return; }
-            data.opponents.forEach(op => {
-                const d = document.createElement('div');
-                d.className = "p-2 bg-slate-900 border border-slate-800 rounded-lg flex justify-between items-center";
-                d.innerHTML = `
-                    <div>
-                        <p class="font-bold text-slate-200 text-xs">${op.name} ${op.is_dev ? '<span class="text-rose-400">[DEV]</span>' : ''}</p>
-                        <p class="text-[10px] text-slate-400">${op.realm} • HP: ${op.hp}</p>
-                    </div>
-                    <button onclick="startPvP(${op.id}, '${op.name}')" class="px-2.5 py-1 bg-rose-600 text-white font-bold text-xs rounded">Quyết Đấu</button>
-                `;
-                list.appendChild(d);
-            });
-        }
-
-        async function startPvP(targetId, targetName) {
-            document.getElementById('battle-title').innerText = `${currentChar.name} VS ${targetName}`;
-            const logBox = document.getElementById('battle-logs');
-            logBox.innerHTML = "<p class='text-amber-400'>Đang tiến vào lôi đài...</p>";
-            document.getElementById('battle-modal').classList.remove('hidden');
-
-            const res = await fetch('/api/pvp/challenge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ challenger_char_id: currentChar.char_id, target_char_id: targetId }) });
-            const d = await res.json();
-            logBox.innerHTML = "";
-            d.logs.forEach(l => {
-                const p = document.createElement('p');
-                p.innerText = l;
-                logBox.appendChild(p);
-            });
-        }
-
-        function switchTab(tabId) {
-            ["tab-slots", "tab-tuhan", "tab-lichluyen", "tab-tienthan", "tab-shop", "tab-pvp"].forEach(id => document.getElementById(id).classList.add('hidden'));
-            document.getElementById(tabId).classList.remove('hidden');
-            if (tabId === 'tab-pvp') loadPvPLobby();
-            if (tabId === 'tab-lichluyen') loadWorldBoss();
-            
-            document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.replace('text-amber-500', 'text-slate-400'));
-            const activeBtn = Array.from(document.querySelectorAll('.nav-btn')).find(b => b.getAttribute('onclick')?.includes(tabId));
-            if (activeBtn) activeBtn.classList.replace('text-slate-400', 'text-amber-500');
-        }
-
-        function closeBattleModal() { document.getElementById('battle-modal').classList.add('hidden'); }
-        function openDevModal() { document.getElementById('dev-modal').classList.remove('hidden'); }
-        function closeDevModal() { document.getElementById('dev-modal').classList.add('hidden'); }
-        function submitDevPassword() {
-            if (document.getElementById('dev-pass').value === "DevGame") {
-                isDev = true; alert("Đã kích hoạt DEV! Khi tạo slot mới sẽ nhận full chỉ số và quyền gọi Boss."); closeDevModal();
-            } else { alert("Sai mật khẩu!"); }
-        }
-
-        loadSlots();
-    </script>
-</body>
-</html>
+    async function submitCreateChar() {
+      const name = document.getElementById("inpCharName").value.trim();
+      const gender = document.getElementById("inpGender").value;
+      if (!name) return alert("Hãy nhập đạo hiệu!");
+      try {
+        const data = await apiPost("/api/create_char", {
+          tg_id: currentTgId,
+          slot: selectedSlotCreate,
+          name, gender,
+          base_stats: createStats
+        });
+        document.getElementById("createCharCard").style.display = "none";
+        currentChar = data.char;
+        updateNavGuard();
+        renderAllChar();
+        switchTab("cultivate");
+        addLog(`🎉 Chào mừng [${currentChar.name}] bước vào con đường tu tiên! Thức tỉnh căn cốt: [${currentChar.bone.name}].`); } catch (e) { alert(e.message); } }  async function enterChar(charId) { try { const data = await apiPost("/api/select_char", { char_id: charId }); currentChar = data.char; updateNavGuard(); renderAllChar(); switchTab("cultivate"); if (data.offline_reward) { showPopup( "🧘 Thu Hoạch Bế Quan Ngoại Tuyến", `Đạo hữu đã rời mạng <b>${data.offline_reward.minutes} phút</b>.<br/>` +
+            `• Linh thạch thu hoạch: <b>+${data.offline_reward.stones} 💎</b><br/>` +
+            `• Tu vi tích lũy: <b>+${data.offline_reward.exp} EXP</b>` ); } } catch (e) { alert(e.message); } }  // 3. RENDER DỮ LIỆU NHÂN VẬT function renderAllChar() { if (!currentChar) return; const c = currentChar; const cs = c.combat_stats;  document.getElementById("cNameTitle").innerText = `${c.name} (${c.gender} - Kiếp ${c.rebirth_count + 1})`;
+      document.getElementById("cRealmBadge").innerText = `${c.realm_name} (Cấp ${c.level}/10)`;
+      document.getElementById("cAge").innerText = `${c.age} /${c.immortal ? '∞ (Vĩnh Sinh)' : c.max_age}`;
+      document.getElementById("cStones").innerText = `${c.stones} 💎`; document.getElementById("cPower").innerText = `${cs.power} ⚔️`;
+      document.getElementById("cStamina").innerText = `${c.stamina}/50 ⚡`; document.getElementById("lblStaminaDetail").innerText = `Thể lực: ${c.stamina}/50 (Hồi
